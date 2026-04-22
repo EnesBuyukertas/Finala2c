@@ -1,0 +1,1539 @@
+Option Explicit
+ 
+' ====================================================
+' SABITLER
+' ====================================================
+Const COJI1_SURE     As Integer = 13
+Const WINDSHIELD_SURE As Integer = 11
+Const MATE_SURE      As Integer = 15
+Const OUTOF_SURE     As Integer = 8
+Const LAYOFF_SURE    As Integer = 2
+Const BOYA_SURE      As Integer = 6
+Const SEALANT_SURE   As Integer = 3
+Const FINAL_SURE     As Integer = 4
+ 
+Const COJI1_HAT      As Integer = 2
+Const COJI2_HAT      As Integer = 5   ' Windshield + Mate icin ortak
+ 
+Const C_AYADI  As Integer = 1
+Const C_LABEL  As Integer = 2
+Const C_VERI   As Integer = 3
+ 
+' ====================================================
+' GLOBAL DEGISKENLER
+' ====================================================
+Dim gNormalVardiya As Integer
+Dim gTatilTarihBas() As Date
+Dim gTatilTarihBit() As Date
+Dim gTatilCalis()   As Boolean
+Dim gTatilVardiya() As Integer
+Dim gTatilSayisi    As Integer
+ 
+' ====================================================
+' TATIL TANIMLARI (2026 Turkiye)
+' ====================================================
+Sub TatilleriOlustur()
+   gTatilSayisi = 8
+   ReDim gTatilTarihBas(0 To gTatilSayisi - 1)
+   ReDim gTatilTarihBit(0 To gTatilSayisi - 1)
+   ReDim gTatilCalis(0 To gTatilSayisi - 1)
+   ReDim gTatilVardiya(0 To gTatilSayisi - 1)
+   gTatilTarihBas(0) = DateSerial(2026, 1, 1):  gTatilTarihBit(0) = DateSerial(2026, 1, 1)
+   gTatilTarihBas(1) = DateSerial(2026, 3, 20): gTatilTarihBit(1) = DateSerial(2026, 3, 22)
+   gTatilTarihBas(2) = DateSerial(2026, 4, 23): gTatilTarihBit(2) = DateSerial(2026, 4, 23)
+   gTatilTarihBas(3) = DateSerial(2026, 5, 1):  gTatilTarihBit(3) = DateSerial(2026, 5, 1)
+   gTatilTarihBas(4) = DateSerial(2026, 5, 19): gTatilTarihBit(4) = DateSerial(2026, 5, 19)
+   gTatilTarihBas(5) = DateSerial(2026, 5, 26): gTatilTarihBit(5) = DateSerial(2026, 5, 30)
+   gTatilTarihBas(6) = DateSerial(2026, 7, 15): gTatilTarihBit(6) = DateSerial(2026, 7, 15)
+   gTatilTarihBas(7) = DateSerial(2026, 8, 30): gTatilTarihBit(7) = DateSerial(2026, 8, 30)
+End Sub
+ 
+Function TatilAdi(idx As Integer) As String
+   Select Case idx
+       Case 0: TatilAdi = "1 Ocak 2026 - Yilbasi"
+       Case 1: TatilAdi = "Ramazan Bayrami 2026 (20-22 Mart)"
+       Case 2: TatilAdi = "23 Nisan 2026 - Ulusal Egemenlik"
+       Case 3: TatilAdi = "1 Mayis 2026 - Isci Bayrami"
+       Case 4: TatilAdi = "19 Mayis 2026 - Genclik Bayrami"
+       Case 5: TatilAdi = "Kurban Bayrami 2026 (26-30 Mayis)"
+       Case 6: TatilAdi = "15 Temmuz 2026 - Demokrasi Gunu"
+       Case 7: TatilAdi = "30 Agustos 2026 - Zafer Bayrami"
+       Case Else: TatilAdi = ""
+   End Select
+End Function
+ 
+' ====================================================
+' TAKVIM YARDIMCILARI
+' ====================================================
+Function ResmiTatilVardiya(dd As Date) As Integer
+   Dim tt As Integer
+   For tt = 0 To gTatilSayisi - 1
+       If dd >= gTatilTarihBas(tt) And dd <= gTatilTarihBit(tt) Then
+           If gTatilCalis(tt) Then
+               ResmiTatilVardiya = gTatilVardiya(tt)
+           Else
+               ResmiTatilVardiya = 0
+           End If
+           Exit Function
+       End If
+   Next tt
+   ResmiTatilVardiya = -1
+End Function
+ 
+Function TatilMi(dd As Date) As Boolean
+   TatilMi = False
+   If Weekday(dd, vbMonday) = 7 Then TatilMi = True: Exit Function
+   If ResmiTatilVardiya(dd) = 0 Then TatilMi = True
+End Function
+ 
+Function AktifVardiya(dd As Date) As Integer
+   If TatilMi(dd) Then AktifVardiya = 0: Exit Function
+   Dim rv As Integer: rv = ResmiTatilVardiya(dd)
+   If rv > 0 Then AktifVardiya = rv Else AktifVardiya = gNormalVardiya
+End Function
+ 
+Function GunSutunSayisi(dd As Date) As Integer
+   If TatilMi(dd) Then GunSutunSayisi = gNormalVardiya: Exit Function
+   Dim rv As Integer: rv = ResmiTatilVardiya(dd)
+   If rv > 0 Then GunSutunSayisi = rv Else GunSutunSayisi = gNormalVardiya
+End Function
+ 
+Function SonrakiIsGunu(dd As Date) As Date
+   Dim s As Date: s = dd
+   Do While TatilMi(s): s = s + 1: Loop
+   SonrakiIsGunu = s
+End Function
+ 
+Function PozKod(t As Date, v As Integer) As Double
+   PozKod = CDbl(t) * 10 + v
+End Function
+ 
+Sub SonrakiBos(ByRef t As Date, ByRef v As Integer)
+   Do
+       If TatilMi(t) Then
+           t = t + 1: v = 0
+       ElseIf v >= AktifVardiya(t) Then
+           t = t + 1: v = 0
+       Else
+           Exit Do
+       End If
+   Loop
+End Sub
+ 
+Sub Tuket(ByRef t As Date, ByRef v As Integer, n As Integer, ByRef bitT As Date, ByRef bitV As Integer)
+   Dim k As Integer: k = n
+   Do While k > 0
+       Call SonrakiBos(t, v)
+       bitT = t: bitV = v: k = k - 1: v = v + 1
+   Loop
+   Call SonrakiBos(t, v)
+End Sub
+ 
+' ====================================================
+' RENK VE GORUNUM
+' ====================================================
+Function UcakRenk(idx As Long) As Long
+   Dim r(0 To 17) As Long
+   r(0) = RGB(255, 255, 0):   r(1) = RGB(255, 100, 100): r(2) = RGB(0, 176, 240)
+   r(3) = RGB(255, 192, 0):   r(4) = RGB(146, 208, 80):  r(5) = RGB(255, 102, 255)
+   r(6) = RGB(0, 204, 153):   r(7) = RGB(255, 153, 204): r(8) = RGB(153, 204, 255)
+   r(9) = RGB(255, 204, 0):   r(10) = RGB(204, 153, 255):r(11) = RGB(0, 204, 204)
+   r(12) = RGB(255, 204, 153):r(13) = RGB(146, 208, 80): r(14) = RGB(255, 153, 0)
+   r(15) = RGB(153, 255, 204):r(16) = RGB(255, 204, 255):r(17) = RGB(204, 255, 153)
+   UcakRenk = r(idx Mod 18)
+End Function
+ 
+Function AyAdi(ayNo As Integer) As String
+   Select Case ayNo
+       Case 1: AyAdi = "OCAK":    Case 2: AyAdi = "SUBAT":   Case 3: AyAdi = "MART"
+       Case 4: AyAdi = "NISAN":   Case 5: AyAdi = "MAYIS":   Case 6: AyAdi = "HAZIRAN"
+       Case 7: AyAdi = "TEMMUZ":  Case 8: AyAdi = "AGUSTOS": Case 9: AyAdi = "EYLUL"
+       Case 10: AyAdi = "EKIM":   Case 11: AyAdi = "KASIM":  Case 12: AyAdi = "ARALIK"
+       Case Else: AyAdi = ""
+   End Select
+End Function
+ 
+Function GunKisa(dd As Date) As String
+   Select Case Weekday(dd, vbMonday)
+       Case 1: GunKisa = "Pzt": Case 2: GunKisa = "Sal": Case 3: GunKisa = "Car"
+       Case 4: GunKisa = "Per": Case 5: GunKisa = "Cum": Case 6: GunKisa = "Cmt": Case 7: GunKisa = "Paz"
+   End Select
+End Function
+ 
+Sub YazTekHucre(ws As Worksheet, satir As Long, sutun As Long, deger As Long, renk As Long)
+   With ws.Cells(satir, sutun)
+       .Value = deger: .Interior.Color = renk: .Font.Size = 7: .Font.Bold = True
+       .HorizontalAlignment = xlCenter: .VerticalAlignment = xlCenter
+       .Borders.LineStyle = xlContinuous: .Borders.Weight = xlThin
+       .Borders.Color = RGB(120, 120, 120)
+   End With
+End Sub
+ 
+Sub YazSiyahHucre(ws As Worksheet, satir As Long, sutun As Long)
+   With ws.Cells(satir, sutun)
+       .Value = "": .Interior.Color = RGB(30, 30, 30)
+       .Borders.LineStyle = xlContinuous: .Borders.Weight = xlThin
+       .Borders.Color = RGB(80, 80, 80)
+   End With
+End Sub
+ 
+Sub AySutunHaritasi(ayBas As Date, gunSay As Long, colMap() As Long)
+   ReDim colMap(0 To gunSay)
+   colMap(0) = C_VERI
+   Dim j As Long
+   For j = 0 To gunSay - 1
+       colMap(j + 1) = colMap(j) + GunSutunSayisi(ayBas + j)
+   Next j
+End Sub
+ 
+' ====================================================
+' CIZIM YARDIMCILARI
+' ====================================================
+Sub CizVardiyalar(ws As Worksheet, satir As Long, _
+                 basT As Date, basV As Integer, bitT As Date, bitV As Integer, _
+                 ucakNo As Long, renk As Long, ayBas As Date, aySon As Date, colMap() As Long)
+   Dim dT As Date: dT = basT
+   Dim dV As Integer: dV = basV
+   Dim aV As Integer, c As Long
+   Do
+       If dT > bitT Then Exit Do
+       If dT = bitT And dV > bitV Then Exit Do
+       If TatilMi(dT) Then
+           dT = dT + 1: dV = 0
+       Else
+           aV = AktifVardiya(dT)
+           If dV < aV Then
+               If dT >= ayBas And dT <= aySon Then
+                   c = colMap(CLng(dT - ayBas)) + dV
+                   Call YazTekHucre(ws, satir, c, ucakNo, renk)
+               End If
+               dV = dV + 1
+               If dV >= aV Then dT = dT + 1: dV = 0
+           Else
+               dT = dT + 1: dV = 0
+           End If
+       End If
+   Loop
+End Sub
+ 
+Sub CizDurus(ws As Worksheet, satir As Long, _
+            basT As Date, basV As Integer, bitT As Date, bitV As Integer, _
+            ayBas As Date, aySon As Date, colMap() As Long)
+   Dim dT As Date: dT = basT
+   Dim dV As Integer: dV = basV
+   Dim aV As Integer, c As Long
+   Do
+       If dT > bitT Then Exit Do
+       If dT = bitT And dV > bitV Then Exit Do
+       If TatilMi(dT) Then
+           dT = dT + 1: dV = 0
+       Else
+           aV = AktifVardiya(dT)
+           If dV < aV Then
+               If dT >= ayBas And dT <= aySon Then
+                   c = colMap(CLng(dT - ayBas)) + dV
+                   Call YazSiyahHucre(ws, satir, c)
+               End If
+               dV = dV + 1
+               If dV >= aV Then dT = dT + 1: dV = 0
+           Else
+               dT = dT + 1: dV = 0
+           End If
+       End If
+   Loop
+End Sub
+ 
+' ====================================================
+' AYARLAR KAYDET / OKU
+' ====================================================
+Sub AyarlariKaydet(c1BasT As Date, c1BasV As Integer, c2BasT As Date, c2BasV As Integer)
+   Dim wsA As Worksheet
+   On Error Resume Next: Application.DisplayAlerts = False
+   ThisWorkbook.Sheets("Ayarlar").Delete
+   Application.DisplayAlerts = True: On Error GoTo 0
+   Set wsA = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+   wsA.Name = "Ayarlar": wsA.Visible = xlSheetHidden
+   wsA.Cells(1, 1).Value = gNormalVardiya
+   wsA.Cells(1, 2).Value = gTatilSayisi
+   wsA.Cells(1, 3).Value = CDbl(c1BasT)   ' COJI1 baslangic tarihi
+   wsA.Cells(1, 4).Value = c1BasV          ' COJI1 baslangic vardiya (0=S1)
+   wsA.Cells(1, 5).Value = CDbl(c2BasT)   ' COJI2 baslangic tarihi
+   wsA.Cells(1, 6).Value = c2BasV          ' COJI2 baslangic vardiya (0=S1)
+   Dim tt As Integer
+   For tt = 0 To gTatilSayisi - 1
+       wsA.Cells(tt + 2, 1).Value = CDbl(gTatilTarihBas(tt))
+       wsA.Cells(tt + 2, 2).Value = CDbl(gTatilTarihBit(tt))
+       If gTatilCalis(tt) Then wsA.Cells(tt + 2, 3).Value = 1 Else wsA.Cells(tt + 2, 3).Value = 0
+       wsA.Cells(tt + 2, 4).Value = gTatilVardiya(tt)
+   Next tt
+End Sub
+ 
+Function AyarlariOku() As Boolean
+   On Error GoTo AyarYok
+   Dim wsA As Worksheet: Set wsA = ThisWorkbook.Sheets("Ayarlar")
+   gNormalVardiya = CInt(wsA.Cells(1, 1).Value)
+   gTatilSayisi = CInt(wsA.Cells(1, 2).Value)
+   Call TatilleriOlustur
+   Dim tt As Integer
+   For tt = 0 To gTatilSayisi - 1
+       gTatilCalis(tt) = (wsA.Cells(tt + 2, 3).Value = 1)
+       gTatilVardiya(tt) = CInt(wsA.Cells(tt + 2, 4).Value)
+   Next tt
+   AyarlariOku = True: Exit Function
+AyarYok:
+   AyarlariOku = False
+End Function
+ 
+' COJI1 ve COJI2 baslangic bilgilerini Ayarlar'dan oku
+Sub BaslangicBilgisiOku(ByRef c1BasT As Date, ByRef c1BasV As Integer, ByRef c2BasT As Date, ByRef c2BasV As Integer)
+   Dim wsA As Worksheet: Set wsA = ThisWorkbook.Sheets("Ayarlar")
+   c1BasT = CDate(wsA.Cells(1, 3).Value)
+   c1BasV = CInt(wsA.Cells(1, 4).Value)
+   c2BasT = CDate(wsA.Cells(1, 5).Value)
+   c2BasV = CInt(wsA.Cells(1, 6).Value)
+End Sub
+ 
+' ====================================================
+' ANA HESAPLAMA
+' ====================================================
+' Her ucak icin:
+'   - COJI1 ve WINDSHIELD paralel baslar (her ikisi de kendi hattini/COJI2'yi kullanir)
+'   - MATE: MAX(coji1 bitis, windshield bitis) sonrasi COJI2 hattinda
+'   - OUT OF, LAYOFF, BOYA, SEALANT, FINAL: tek hat, sirayla
+'   - DURUS: COJI1 baslamadan once bekleme suresi
+ 
+Sub TumHesapla( _
+   ucNo() As Long, ucDurus() As Integer, _
+   ucCoji1Sure() As Integer, ucWindSure() As Integer, ucMateSure() As Integer, _
+   ucOutSure() As Integer, ucLaySure() As Integer, ucBoyaSure() As Integer, _
+   ucSealSure() As Integer, ucFinalSure() As Integer, _
+   ucakSayisi As Long, _
+   c1BasT As Date, c1BasV As Integer, _
+   c2BasT As Date, c2BasV As Integer, _
+   ucDurusBasT() As Date, ucDurusBasV() As Integer, ucDurusBitT() As Date, ucDurusBitV() As Integer, _
+   ucC1BasT() As Date, ucC1BasV() As Integer, ucC1BitT() As Date, ucC1BitV() As Integer, _
+   ucC1Hat() As Integer, _
+   ucWinBasT() As Date, ucWinBasV() As Integer, ucWinBitT() As Date, ucWinBitV() As Integer, _
+   ucWinHat() As Integer, _
+   ucMateBasT() As Date, ucMateBasV() As Integer, ucMateBitT() As Date, ucMateBitV() As Integer, _
+   ucMateHat() As Integer, _
+   ucOutBasT() As Date, ucOutBasV() As Integer, ucOutBitT() As Date, ucOutBitV() As Integer, _
+   ucLayBasT() As Date, ucLayBasV() As Integer, ucLayBitT() As Date, ucLayBitV() As Integer, _
+   ucBoyaBasT() As Date, ucBoyaBasV() As Integer, ucBoyaBitT() As Date, ucBoyaBitV() As Integer, _
+   ucSealBasT() As Date, ucSealBasV() As Integer, ucSealBitT() As Date, ucSealBitV() As Integer, _
+   ucFinalBasT() As Date, ucFinalBasV() As Integer, ucFinalBitT() As Date, ucFinalBitV() As Integer)
+ 
+   ' --- Dizileri boyutlandir ---
+   ReDim ucDurusBasT(0 To ucakSayisi - 1): ReDim ucDurusBasV(0 To ucakSayisi - 1)
+   ReDim ucDurusBitT(0 To ucakSayisi - 1): ReDim ucDurusBitV(0 To ucakSayisi - 1)
+   ReDim ucC1BasT(0 To ucakSayisi - 1):    ReDim ucC1BasV(0 To ucakSayisi - 1)
+   ReDim ucC1BitT(0 To ucakSayisi - 1):    ReDim ucC1BitV(0 To ucakSayisi - 1)
+   ReDim ucC1Hat(0 To ucakSayisi - 1)
+   ReDim ucWinBasT(0 To ucakSayisi - 1):   ReDim ucWinBasV(0 To ucakSayisi - 1)
+   ReDim ucWinBitT(0 To ucakSayisi - 1):   ReDim ucWinBitV(0 To ucakSayisi - 1)
+   ReDim ucWinHat(0 To ucakSayisi - 1)
+   ReDim ucMateBasT(0 To ucakSayisi - 1):  ReDim ucMateBasV(0 To ucakSayisi - 1)
+   ReDim ucMateBitT(0 To ucakSayisi - 1):  ReDim ucMateBitV(0 To ucakSayisi - 1)
+   ReDim ucMateHat(0 To ucakSayisi - 1)
+   ReDim ucOutBasT(0 To ucakSayisi - 1):   ReDim ucOutBasV(0 To ucakSayisi - 1)
+   ReDim ucOutBitT(0 To ucakSayisi - 1):   ReDim ucOutBitV(0 To ucakSayisi - 1)
+   ReDim ucLayBasT(0 To ucakSayisi - 1):   ReDim ucLayBasV(0 To ucakSayisi - 1)
+   ReDim ucLayBitT(0 To ucakSayisi - 1):   ReDim ucLayBitV(0 To ucakSayisi - 1)
+   ReDim ucBoyaBasT(0 To ucakSayisi - 1):  ReDim ucBoyaBasV(0 To ucakSayisi - 1)
+   ReDim ucBoyaBitT(0 To ucakSayisi - 1):  ReDim ucBoyaBitV(0 To ucakSayisi - 1)
+   ReDim ucSealBasT(0 To ucakSayisi - 1):  ReDim ucSealBasV(0 To ucakSayisi - 1)
+   ReDim ucSealBitT(0 To ucakSayisi - 1):  ReDim ucSealBitV(0 To ucakSayisi - 1)
+   ReDim ucFinalBasT(0 To ucakSayisi - 1): ReDim ucFinalBasV(0 To ucakSayisi - 1)
+   ReDim ucFinalBitT(0 To ucakSayisi - 1): ReDim ucFinalBitV(0 To ucakSayisi - 1)
+ 
+   ' --- Hat kuyruk posizyonlari ---
+   ' COJI1: 2 hat - kendi baslangic tarihi ve vardiyasi
+   Dim c1SonT(1 To COJI1_HAT) As Date, c1SonV(1 To COJI1_HAT) As Integer
+   Dim h As Integer
+   For h = 1 To COJI1_HAT: c1SonT(h) = c1BasT: c1SonV(h) = c1BasV: Next h
+ 
+   ' COJI2: 5 hat (windshield + mate ortak) - kendi baslangic tarihi ve vardiyasi
+   Dim c2SonT(1 To COJI2_HAT) As Date, c2SonV(1 To COJI2_HAT) As Integer
+   For h = 1 To COJI2_HAT: c2SonT(h) = c2BasT: c2SonV(h) = c2BasV: Next h
+ 
+   ' Tek hatli istasyonlar - en erken baslangictan baslar
+   Dim enErkenT As Date
+   If c1BasT <= c2BasT Then enErkenT = c1BasT Else enErkenT = c2BasT
+ 
+   ' Tek hatli istasyonlar
+   Dim outSonT As Date, outSonV As Integer
+   Dim laySonT As Date, laySonV As Integer
+   Dim boyaSonT As Date, boyaSonV As Integer
+   Dim sealSonT As Date, sealSonV As Integer
+   Dim finalSonT As Date, finalSonV As Integer
+   outSonT = enErkenT:   outSonV = 0
+   laySonT = enErkenT:   laySonV = 0
+   boyaSonT = enErkenT:  boyaSonV = 0
+   sealSonT = enErkenT:  sealSonV = 0
+   finalSonT = enErkenT: finalSonV = 0
+ 
+   Dim i As Long
+   Dim startT As Date, startV As Integer, bitT As Date, bitV As Integer
+   Dim c1H As Integer, c2H_win As Integer, c2H_mate As Integer
+   Dim enDusukKod As Double, kod As Double
+ 
+   For i = 0 To ucakSayisi - 1
+ 
+       ' --- 1) DURUS ---
+       If ucDurus(i) > 0 Then
+           ' En erken bos COJI1 hattin baslangicina gore durus yerlesir
+           enDusukKod = PozKod(c1SonT(1), c1SonV(1)): c1H = 1
+           For h = 2 To COJI1_HAT
+               kod = PozKod(c1SonT(h), c1SonV(h))
+               If kod < enDusukKod Then enDusukKod = kod: c1H = h
+           Next h
+           startT = c1SonT(c1H): startV = c1SonV(c1H)
+           Call SonrakiBos(startT, startV)
+           ucDurusBasT(i) = startT: ucDurusBasV(i) = startV
+           Call Tuket(startT, startV, ucDurus(i), bitT, bitV)
+           ucDurusBitT(i) = bitT: ucDurusBitV(i) = bitV
+           c1SonT(c1H) = startT: c1SonV(c1H) = startV
+       End If
+ 
+       ' --- 2) COJI1 (en erken bos hat) ---
+       enDusukKod = PozKod(c1SonT(1), c1SonV(1)): c1H = 1
+       For h = 2 To COJI1_HAT
+           kod = PozKod(c1SonT(h), c1SonV(h))
+           If kod < enDusukKod Then enDusukKod = kod: c1H = h
+       Next h
+       startT = c1SonT(c1H): startV = c1SonV(c1H)
+       Call SonrakiBos(startT, startV)
+       ucC1BasT(i) = startT: ucC1BasV(i) = startV
+       ucC1Hat(i) = c1H
+       Call Tuket(startT, startV, ucCoji1Sure(i), bitT, bitV)
+       ucC1BitT(i) = bitT: ucC1BitV(i) = bitV
+       c1SonT(c1H) = startT: c1SonV(c1H) = startV
+       Dim c1BitKod As Double: c1BitKod = PozKod(ucC1BitT(i), ucC1BitV(i))
+ 
+       ' --- 3) WINDSHIELD (COJI2, en erken bos hat, COJI1 ile paralel baslar) ---
+       ' COJI1 baslangicina gore COJI2'de yer bul
+       Dim winReqT As Date: winReqT = ucC1BasT(i)
+       enDusukKod = PozKod(c2SonT(1), c2SonV(1)): c2H_win = 1
+       For h = 2 To COJI2_HAT
+           kod = PozKod(c2SonT(h), c2SonV(h))
+           If kod < enDusukKod Then enDusukKod = kod: c2H_win = h
+       Next h
+       ' Eger hat musait degil ise hat bos olana kadar bekle
+       If PozKod(c2SonT(c2H_win), c2SonV(c2H_win)) > PozKod(winReqT, 0) Then
+           startT = c2SonT(c2H_win): startV = c2SonV(c2H_win)
+       Else
+           startT = winReqT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       ucWinBasT(i) = startT: ucWinBasV(i) = startV
+       ucWinHat(i) = c2H_win
+       Call Tuket(startT, startV, ucWindSure(i), bitT, bitV)
+       ucWinBitT(i) = bitT: ucWinBitV(i) = bitV
+       c2SonT(c2H_win) = startT: c2SonV(c2H_win) = startV
+       Dim winBitKod As Double: winBitKod = PozKod(ucWinBitT(i), ucWinBitV(i))
+ 
+       ' --- 4) MATE (COJI2, en erken bos hat, COJI1 VE WINDSHIELD bittikten sonra) ---
+       ' Hangi bitis daha gec?
+       Dim mateReqT As Date, mateReqV As Integer
+       If c1BitKod >= winBitKod Then
+           mateReqT = ucC1BitT(i): mateReqV = ucC1BitV(i)
+       Else
+           mateReqT = ucWinBitT(i): mateReqV = ucWinBitV(i)
+       End If
+       mateReqT = SonrakiIsGunu(mateReqT + 1)
+ 
+       ' En erken bos COJI2 hatti bul
+       enDusukKod = PozKod(c2SonT(1), c2SonV(1)): c2H_mate = 1
+       For h = 2 To COJI2_HAT
+           kod = PozKod(c2SonT(h), c2SonV(h))
+           If kod < enDusukKod Then enDusukKod = kod: c2H_mate = h
+       Next h
+       If PozKod(c2SonT(c2H_mate), c2SonV(c2H_mate)) > PozKod(mateReqT, 0) Then
+           startT = c2SonT(c2H_mate): startV = c2SonV(c2H_mate)
+       Else
+           startT = mateReqT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       ucMateBasT(i) = startT: ucMateBasV(i) = startV
+       ucMateHat(i) = c2H_mate
+       Call Tuket(startT, startV, ucMateSure(i), bitT, bitV)
+       ucMateBitT(i) = bitT: ucMateBitV(i) = bitV
+       c2SonT(c2H_mate) = startT: c2SonV(c2H_mate) = startV
+ 
+       ' Sonraki asamalar icin baslangic = bir sonraki is gunu
+       Dim sonrakiT As Date: sonrakiT = SonrakiIsGunu(ucMateBitT(i) + 1)
+ 
+       ' --- 5) OUT OF (tek hat) ---
+       If PozKod(outSonT, outSonV) > PozKod(sonrakiT, 0) Then
+           startT = outSonT: startV = outSonV
+       Else
+           startT = sonrakiT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       ucOutBasT(i) = startT: ucOutBasV(i) = startV
+       Call Tuket(startT, startV, ucOutSure(i), bitT, bitV)
+       ucOutBitT(i) = bitT: ucOutBitV(i) = bitV
+       outSonT = startT: outSonV = startV
+       sonrakiT = SonrakiIsGunu(ucOutBitT(i) + 1)
+ 
+       ' --- 6) LAY OFF (tek hat) ---
+       If PozKod(laySonT, laySonV) > PozKod(sonrakiT, 0) Then
+           startT = laySonT: startV = laySonV
+       Else
+           startT = sonrakiT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       ucLayBasT(i) = startT: ucLayBasV(i) = startV
+       Call Tuket(startT, startV, ucLaySure(i), bitT, bitV)
+       ucLayBitT(i) = bitT: ucLayBitV(i) = bitV
+       laySonT = startT: laySonV = startV
+       sonrakiT = SonrakiIsGunu(ucLayBitT(i) + 1)
+ 
+       ' --- 7) BOYA (tek hat) ---
+       If PozKod(boyaSonT, boyaSonV) > PozKod(sonrakiT, 0) Then
+           startT = boyaSonT: startV = boyaSonV
+       Else
+           startT = sonrakiT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       ucBoyaBasT(i) = startT: ucBoyaBasV(i) = startV
+       Call Tuket(startT, startV, ucBoyaSure(i), bitT, bitV)
+       ucBoyaBitT(i) = bitT: ucBoyaBitV(i) = bitV
+       boyaSonT = startT: boyaSonV = startV
+       sonrakiT = SonrakiIsGunu(ucBoyaBitT(i) + 1)
+ 
+       ' --- 8) SEALANT (tek hat) ---
+       If PozKod(sealSonT, sealSonV) > PozKod(sonrakiT, 0) Then
+           startT = sealSonT: startV = sealSonV
+       Else
+           startT = sonrakiT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       ucSealBasT(i) = startT: ucSealBasV(i) = startV
+       Call Tuket(startT, startV, ucSealSure(i), bitT, bitV)
+       ucSealBitT(i) = bitT: ucSealBitV(i) = bitV
+       sealSonT = startT: sealSonV = startV
+       sonrakiT = SonrakiIsGunu(ucSealBitT(i) + 1)
+ 
+       ' --- 9) FINAL (tek hat) ---
+       If PozKod(finalSonT, finalSonV) > PozKod(sonrakiT, 0) Then
+           startT = finalSonT: startV = finalSonV
+       Else
+           startT = sonrakiT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       ucFinalBasT(i) = startT: ucFinalBasV(i) = startV
+       Call Tuket(startT, startV, ucFinalSure(i), bitT, bitV)
+       ucFinalBitT(i) = bitT: ucFinalBitV(i) = bitV
+       finalSonT = startT: finalSonV = startV
+ 
+   Next i
+End Sub
+ 
+' ====================================================
+' GORSEL OLUSTUR
+' ====================================================
+' Satir yapisi (her ay blogu, BLOK_YUK satir):
+'  baseRow+0  : Gun adi (Pzt, Sal...)
+'  baseRow+1  : Gun sayisi
+'  baseRow+2  : Vardiya no (S1, S2...)
+'  baseRow+3  : COJI1 Hat1
+'  baseRow+4  : COJI1 Hat2
+'  baseRow+5  : WINDSHIELD Hat1
+'  baseRow+6  : WINDSHIELD Hat2
+'  baseRow+7  : WINDSHIELD Hat3
+'  baseRow+8  : WINDSHIELD Hat4
+'  baseRow+9  : WINDSHIELD Hat5
+'  (COJI2 = Windshield + Mate hatlari)
+'  baseRow+10 : MATE Hat1
+'  baseRow+11 : MATE Hat2
+'  baseRow+12 : MATE Hat3
+'  baseRow+13 : MATE Hat4
+'  baseRow+14 : MATE Hat5
+'  baseRow+15 : OUT OF
+'  baseRow+16 : LAY OFF
+'  baseRow+17 : BOYA
+'  baseRow+18 : SEALANT
+'  baseRow+19 : FINAL
+ 
+Sub GorselOlustur( _
+   ucNo() As Long, ucDurus() As Integer, _
+   ucC1BasT() As Date, ucC1BasV() As Integer, ucC1BitT() As Date, ucC1BitV() As Integer, ucC1Hat() As Integer, _
+   ucWinBasT() As Date, ucWinBasV() As Integer, ucWinBitT() As Date, ucWinBitV() As Integer, ucWinHat() As Integer, _
+   ucMateBasT() As Date, ucMateBasV() As Integer, ucMateBitT() As Date, ucMateBitV() As Integer, ucMateHat() As Integer, _
+   ucOutBasT() As Date, ucOutBasV() As Integer, ucOutBitT() As Date, ucOutBitV() As Integer, _
+   ucLayBasT() As Date, ucLayBasV() As Integer, ucLayBitT() As Date, ucLayBitV() As Integer, _
+   ucBoyaBasT() As Date, ucBoyaBasV() As Integer, ucBoyaBitT() As Date, ucBoyaBitV() As Integer, _
+   ucSealBasT() As Date, ucSealBasV() As Integer, ucSealBitT() As Date, ucSealBitV() As Integer, _
+   ucFinalBasT() As Date, ucFinalBasV() As Integer, ucFinalBitT() As Date, ucFinalBitV() As Integer, _
+   ucDurusBasT() As Date, ucDurusBasV() As Integer, ucDurusBitT() As Date, ucDurusBitV() As Integer, _
+   ucakSayisi As Long, aySayisi As Integer, enErken As Date)
+ 
+   Dim ws As Worksheet
+   On Error Resume Next: Application.DisplayAlerts = False
+   ThisWorkbook.Sheets("OtomatikPlan").Delete
+   Application.DisplayAlerts = True: On Error GoTo 0
+   Set ws = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+   ws.Name = "OtomatikPlan": ws.Cells.Font.Name = "Calibri"
+ 
+   Const BLOK_YUK As Integer = 21  ' 3 baslik + 17 satir veri + 1 bosluk
+   Const DATA_SATIR As Integer = 17 ' COJI1x2 + WINDx5 + MATEx5 + OUT+LAY+BOYA+SEAL+FINAL
+ 
+   Dim mm As Integer, curAy As Integer, curYil As Integer
+   Dim ayBas As Date, aySon As Date, gunSay As Long, baseRow As Long
+   Dim col As Long, j As Long, dd As Date, lastCol As Long
+   Dim ui As Long, renk As Long, aktV As Integer
+   Dim vv As Integer, ll As Integer, gunV As Integer
+   Dim colMap() As Long, rr As Integer
+ 
+   ' Satir etiket tanimlari
+   Dim satirEtiketler(1 To DATA_SATIR) As String
+   Dim satirRenkler(1 To DATA_SATIR) As Long
+   satirEtiketler(1) = "COJI 1 - Hat 1":    satirRenkler(1) = RGB(255, 255, 180)
+   satirEtiketler(2) = "COJI 1 - Hat 2":    satirRenkler(2) = RGB(255, 255, 180)
+   satirEtiketler(3) = "WINDSHIELD - Hat 1": satirRenkler(3) = RGB(180, 220, 255)
+   satirEtiketler(4) = "WINDSHIELD - Hat 2": satirRenkler(4) = RGB(180, 220, 255)
+   satirEtiketler(5) = "WINDSHIELD - Hat 3": satirRenkler(5) = RGB(180, 220, 255)
+   satirEtiketler(6) = "WINDSHIELD - Hat 4": satirRenkler(6) = RGB(180, 220, 255)
+   satirEtiketler(7) = "WINDSHIELD - Hat 5": satirRenkler(7) = RGB(180, 220, 255)
+   satirEtiketler(8) = "MATE - Hat 1":       satirRenkler(8) = RGB(200, 255, 200)
+   satirEtiketler(9) = "MATE - Hat 2":       satirRenkler(9) = RGB(200, 255, 200)
+   satirEtiketler(10) = "MATE - Hat 3":      satirRenkler(10) = RGB(200, 255, 200)
+   satirEtiketler(11) = "MATE - Hat 4":      satirRenkler(11) = RGB(200, 255, 200)
+   satirEtiketler(12) = "MATE - Hat 5":      satirRenkler(12) = RGB(200, 255, 200)
+   satirEtiketler(13) = "OUT OF":            satirRenkler(13) = RGB(255, 200, 160)
+   satirEtiketler(14) = "LAY OFF":           satirRenkler(14) = RGB(220, 200, 255)
+   satirEtiketler(15) = "BOYA":              satirRenkler(15) = RGB(255, 180, 180)
+   satirEtiketler(16) = "SEALANT":           satirRenkler(16) = RGB(200, 240, 240)
+   satirEtiketler(17) = "FINAL":             satirRenkler(17) = RGB(180, 255, 180)
+ 
+   For mm = 0 To aySayisi - 1
+       curAy = Month(enErken) + mm: curYil = Year(enErken)
+       Do While curAy > 12: curAy = curAy - 12: curYil = curYil + 1: Loop
+       ayBas = DateSerial(curYil, curAy, 1)
+       aySon = DateSerial(curYil, curAy + 1, 0)
+       gunSay = Day(aySon): baseRow = 1 + mm * BLOK_YUK
+       Call AySutunHaritasi(ayBas, gunSay, colMap)
+ 
+       ' Ay etiketi
+       ws.Range(ws.Cells(baseRow + 3, C_AYADI), ws.Cells(baseRow + 3 + DATA_SATIR - 1, C_AYADI)).Merge
+       With ws.Cells(baseRow + 3, C_AYADI)
+           .Value = AyAdi(curAy): .HorizontalAlignment = xlCenter: .VerticalAlignment = xlCenter
+           .Orientation = 90: .Font.Bold = True: .Font.Size = 11
+           .Font.Color = RGB(255, 255, 255): .Interior.Color = RGB(0, 80, 160)
+       End With
+       ws.Columns(C_AYADI).ColumnWidth = 3.5
+ 
+       ' Satir etiketleri
+       For ll = 1 To DATA_SATIR
+           With ws.Cells(baseRow + 2 + ll, C_LABEL)
+               .Value = satirEtiketler(ll): .Font.Bold = True: .Font.Size = 8
+               .VerticalAlignment = xlCenter: .Interior.Color = satirRenkler(ll)
+           End With
+       Next ll
+       ws.Columns(C_LABEL).ColumnWidth = 18
+ 
+       ' Gun baslik satirlari
+       For j = 0 To gunSay - 1
+           dd = ayBas + j: col = colMap(j): gunV = GunSutunSayisi(dd)
+           ws.Range(ws.Cells(baseRow, col), ws.Cells(baseRow, col + gunV - 1)).Merge
+           ws.Cells(baseRow, col).Value = GunKisa(dd)
+           ws.Cells(baseRow, col).HorizontalAlignment = xlCenter
+           ws.Cells(baseRow, col).Font.Size = 7: ws.Cells(baseRow, col).Font.Bold = True
+           ws.Range(ws.Cells(baseRow + 1, col), ws.Cells(baseRow + 1, col + gunV - 1)).Merge
+           ws.Cells(baseRow + 1, col).Value = Day(dd)
+           ws.Cells(baseRow + 1, col).HorizontalAlignment = xlCenter
+           ws.Cells(baseRow + 1, col).Font.Size = 8: ws.Cells(baseRow + 1, col).Font.Bold = True
+           aktV = AktifVardiya(dd)
+           For vv = 0 To gunV - 1
+               If vv < aktV Then ws.Cells(baseRow + 2, col + vv).Value = "S" & (vv + 1)
+               ws.Cells(baseRow + 2, col + vv).HorizontalAlignment = xlCenter
+               ws.Cells(baseRow + 2, col + vv).Font.Size = 7
+               ws.Columns(col + vv).ColumnWidth = 4
+           Next vv
+           If TatilMi(dd) Then
+               ws.Range(ws.Cells(baseRow, col), ws.Cells(baseRow + 2 + DATA_SATIR, col + gunV - 1)).Interior.Color = RGB(215, 215, 215)
+               If Weekday(dd, vbMonday) = 7 Then ws.Cells(baseRow, col).Font.Color = RGB(180, 0, 0)
+           ElseIf ResmiTatilVardiya(dd) > 0 Then
+               ws.Range(ws.Cells(baseRow, col), ws.Cells(baseRow + 1, col + gunV - 1)).Interior.Color = RGB(255, 230, 200)
+           End If
+       Next j
+ 
+       lastCol = colMap(gunSay) - 1
+       ws.Range(ws.Cells(baseRow, C_VERI), ws.Cells(baseRow + 2, lastCol)).Borders.LineStyle = xlContinuous
+       ws.Range(ws.Cells(baseRow, C_VERI), ws.Cells(baseRow + 2, lastCol)).Borders.Weight = xlThin
+       ws.Range(ws.Cells(baseRow, C_VERI), ws.Cells(baseRow + 2, lastCol)).Borders.Color = RGB(150, 150, 150)
+       ws.Range(ws.Cells(baseRow + 3, C_VERI), ws.Cells(baseRow + 2 + DATA_SATIR, lastCol)).Borders.LineStyle = xlContinuous
+       ws.Range(ws.Cells(baseRow + 3, C_VERI), ws.Cells(baseRow + 2 + DATA_SATIR, lastCol)).Borders.Weight = xlHairline
+       ws.Range(ws.Cells(baseRow + 3, C_VERI), ws.Cells(baseRow + 2 + DATA_SATIR, lastCol)).Borders.Color = RGB(200, 200, 200)
+       ws.Rows(baseRow).RowHeight = 14: ws.Rows(baseRow + 1).RowHeight = 16: ws.Rows(baseRow + 2).RowHeight = 12
+       For rr = 3 To 2 + DATA_SATIR: ws.Rows(baseRow + rr).RowHeight = 16: Next rr
+ 
+       ' Her ucak icin cizim
+       For ui = 0 To ucakSayisi - 1
+           renk = UcakRenk(ui)
+           Dim c1Sat As Long, winSat As Long, mateSat As Long
+ 
+           ' COJI1 hat satirlari: 3, 4
+           c1Sat = baseRow + 2 + ucC1Hat(ui)  ' Hat1=satir3, Hat2=satir4
+ 
+           ' WINDSHIELD hat satirlari: 3..7 (COJI2 hat 1..5)
+           winSat = baseRow + 2 + 2 + ucWinHat(ui)  ' Hat1=satir5, ...Hat5=satir9
+ 
+           ' MATE hat satirlari: 8..12 (COJI2 hat 1..5)
+           mateSat = baseRow + 2 + 7 + ucMateHat(ui) ' Hat1=satir10, ...Hat5=satir14
+ 
+           ' Durus (siyah) - COJI1 hattinda
+           If ucDurus(ui) > 0 Then
+               Call CizDurus(ws, c1Sat, ucDurusBasT(ui), ucDurusBasV(ui), ucDurusBitT(ui), ucDurusBitV(ui), ayBas, aySon, colMap)
+           End If
+ 
+           ' COJI1
+           Call CizVardiyalar(ws, c1Sat, ucC1BasT(ui), ucC1BasV(ui), ucC1BitT(ui), ucC1BitV(ui), ucNo(ui), renk, ayBas, aySon, colMap)
+ 
+           ' WINDSHIELD
+           Call CizVardiyalar(ws, winSat, ucWinBasT(ui), ucWinBasV(ui), ucWinBitT(ui), ucWinBitV(ui), ucNo(ui), renk, ayBas, aySon, colMap)
+ 
+           ' MATE
+           Call CizVardiyalar(ws, mateSat, ucMateBasT(ui), ucMateBasV(ui), ucMateBitT(ui), ucMateBitV(ui), ucNo(ui), renk, ayBas, aySon, colMap)
+ 
+           ' OUT OF (satir 15 = baseRow+2+13)
+           Call CizVardiyalar(ws, baseRow + 15, ucOutBasT(ui), ucOutBasV(ui), ucOutBitT(ui), ucOutBitV(ui), ucNo(ui), renk, ayBas, aySon, colMap)
+ 
+           ' LAY OFF (satir 16)
+           Call CizVardiyalar(ws, baseRow + 16, ucLayBasT(ui), ucLayBasV(ui), ucLayBitT(ui), ucLayBitV(ui), ucNo(ui), renk, ayBas, aySon, colMap)
+ 
+           ' BOYA (satir 17)
+           Call CizVardiyalar(ws, baseRow + 17, ucBoyaBasT(ui), ucBoyaBasV(ui), ucBoyaBitT(ui), ucBoyaBitV(ui), ucNo(ui), renk, ayBas, aySon, colMap)
+ 
+           ' SEALANT (satir 18)
+           Call CizVardiyalar(ws, baseRow + 18, ucSealBasT(ui), ucSealBasV(ui), ucSealBitT(ui), ucSealBitV(ui), ucNo(ui), renk, ayBas, aySon, colMap)
+ 
+           ' FINAL (satir 19)
+           Call CizVardiyalar(ws, baseRow + 19, ucFinalBasT(ui), ucFinalBasV(ui), ucFinalBitT(ui), ucFinalBitV(ui), ucNo(ui), renk, ayBas, aySon, colMap)
+       Next ui
+   Next mm
+ 
+   ws.Activate: ws.Cells(1, C_VERI).Select: ActiveWindow.FreezePanes = True: ws.Cells(1, 1).Select
+End Sub
+ 
+' ====================================================
+' DETAY SAYFALARI
+' ====================================================
+Sub DetaySayfalari( _
+   ucNo() As Long, ucDurus() As Integer, _
+   ucCoji1Sure() As Integer, ucWindSure() As Integer, ucMateSure() As Integer, _
+   ucOutSure() As Integer, ucLaySure() As Integer, ucBoyaSure() As Integer, _
+   ucSealSure() As Integer, ucFinalSure() As Integer, _
+   ucC1BasT() As Date, ucC1BitT() As Date, ucC1Hat() As Integer, _
+   ucWinBasT() As Date, ucWinBitT() As Date, ucWinHat() As Integer, _
+   ucMateBasT() As Date, ucMateBitT() As Date, ucMateHat() As Integer, _
+   ucOutBasT() As Date, ucOutBitT() As Date, _
+   ucLayBasT() As Date, ucLayBitT() As Date, _
+   ucBoyaBasT() As Date, ucBoyaBitT() As Date, _
+   ucSealBasT() As Date, ucSealBitT() As Date, _
+   ucFinalBasT() As Date, ucFinalBitT() As Date, _
+   ucakSayisi As Long)
+ 
+   Dim wsL As Worksheet
+   On Error Resume Next: Application.DisplayAlerts = False
+   ThisWorkbook.Sheets("PlanDetay").Delete
+   Application.DisplayAlerts = True: On Error GoTo 0
+   Set wsL = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+   wsL.Name = "PlanDetay": wsL.Cells.Font.Name = "Calibri"
+ 
+   ' Basliklar
+   Dim basliklar As Variant
+   basliklar = Array("Ucak", "Durus", "C1Sure", "WinSure", "MateSure", "OutSure", "LaySure", "BoyaSure", "SealSure", "FinalSure", _
+                     "C1Hat", "C1Bas", "C1Bit", "WinHat", "WinBas", "WinBit", "MateHat", "MateBas", "MateBit", _
+                     "OutBas", "OutBit", "LayBas", "LayBit", "BoyaBas", "BoyaBit", "SealBas", "SealBit", "FinalBas", "FinalBit")
+   Dim k As Integer
+   For k = 0 To UBound(basliklar)
+       wsL.Cells(1, k + 1).Value = basliklar(k)
+   Next k
+   wsL.Range(wsL.Cells(1, 1), wsL.Cells(1, UBound(basliklar) + 1)).Font.Bold = True
+   wsL.Range(wsL.Cells(1, 1), wsL.Cells(1, UBound(basliklar) + 1)).Interior.Color = RGB(0, 80, 160)
+   wsL.Range(wsL.Cells(1, 1), wsL.Cells(1, UBound(basliklar) + 1)).Font.Color = RGB(255, 255, 255)
+ 
+   Dim i As Long
+   For i = 0 To ucakSayisi - 1
+       Dim r As Long: r = i + 2
+       wsL.Cells(r, 1).Value = ucNo(i)
+       wsL.Cells(r, 2).Value = ucDurus(i)
+       wsL.Cells(r, 3).Value = ucCoji1Sure(i)
+       wsL.Cells(r, 4).Value = ucWindSure(i)
+       wsL.Cells(r, 5).Value = ucMateSure(i)
+       wsL.Cells(r, 6).Value = ucOutSure(i)
+       wsL.Cells(r, 7).Value = ucLaySure(i)
+       wsL.Cells(r, 8).Value = ucBoyaSure(i)
+       wsL.Cells(r, 9).Value = ucSealSure(i)
+       wsL.Cells(r, 10).Value = ucFinalSure(i)
+       wsL.Cells(r, 11).Value = ucC1Hat(i)
+       wsL.Cells(r, 12).Value = ucC1BasT(i):   wsL.Cells(r, 12).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 13).Value = ucC1BitT(i):   wsL.Cells(r, 13).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 14).Value = ucWinHat(i)
+       wsL.Cells(r, 15).Value = ucWinBasT(i):  wsL.Cells(r, 15).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 16).Value = ucWinBitT(i):  wsL.Cells(r, 16).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 17).Value = ucMateHat(i)
+       wsL.Cells(r, 18).Value = ucMateBasT(i): wsL.Cells(r, 18).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 19).Value = ucMateBitT(i): wsL.Cells(r, 19).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 20).Value = ucOutBasT(i):  wsL.Cells(r, 20).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 21).Value = ucOutBitT(i):  wsL.Cells(r, 21).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 22).Value = ucLayBasT(i):  wsL.Cells(r, 22).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 23).Value = ucLayBitT(i):  wsL.Cells(r, 23).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 24).Value = ucBoyaBasT(i): wsL.Cells(r, 24).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 25).Value = ucBoyaBitT(i): wsL.Cells(r, 25).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 26).Value = ucSealBasT(i): wsL.Cells(r, 26).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 27).Value = ucSealBitT(i): wsL.Cells(r, 27).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 28).Value = ucFinalBasT(i):wsL.Cells(r, 28).NumberFormat = "DD.MM.YYYY"
+       wsL.Cells(r, 29).Value = ucFinalBitT(i):wsL.Cells(r, 29).NumberFormat = "DD.MM.YYYY"
+       wsL.Range(wsL.Cells(r, 1), wsL.Cells(r, 29)).Interior.Color = UcakRenk(i)
+   Next i
+   wsL.Columns("A:AC").AutoFit
+End Sub
+ 
+' ====================================================
+' YARDIMCI: PlanDetay'dan veri oku
+' ====================================================
+Sub PlanDetayOku( _
+   ucNo() As Long, ucDurus() As Integer, _
+   ucCoji1Sure() As Integer, ucWindSure() As Integer, ucMateSure() As Integer, _
+   ucOutSure() As Integer, ucLaySure() As Integer, ucBoyaSure() As Integer, _
+   ucSealSure() As Integer, ucFinalSure() As Integer, _
+   ucakSayisi As Long)
+   Dim wsP As Worksheet: Set wsP = ThisWorkbook.Sheets("PlanDetay")
+   Dim i As Long
+   For i = 0 To ucakSayisi - 1
+       ucNo(i) = CLng(wsP.Cells(i + 2, 1).Value)
+       ucDurus(i) = CInt(wsP.Cells(i + 2, 2).Value)
+       ucCoji1Sure(i) = CInt(wsP.Cells(i + 2, 3).Value)
+       ucWindSure(i) = CInt(wsP.Cells(i + 2, 4).Value)
+       ucMateSure(i) = CInt(wsP.Cells(i + 2, 5).Value)
+       ucOutSure(i) = CInt(wsP.Cells(i + 2, 6).Value)
+       ucLaySure(i) = CInt(wsP.Cells(i + 2, 7).Value)
+       ucBoyaSure(i) = CInt(wsP.Cells(i + 2, 8).Value)
+       ucSealSure(i) = CInt(wsP.Cells(i + 2, 9).Value)
+       ucFinalSure(i) = CInt(wsP.Cells(i + 2, 10).Value)
+   Next i
+End Sub
+ 
+Sub GuncelleVeCiz( _
+   ucNo() As Long, ucDurus() As Integer, _
+   ucCoji1Sure() As Integer, ucWindSure() As Integer, ucMateSure() As Integer, _
+   ucOutSure() As Integer, ucLaySure() As Integer, ucBoyaSure() As Integer, _
+   ucSealSure() As Integer, ucFinalSure() As Integer, _
+   ucakSayisi As Long, aySayisi As Integer)
+ 
+   ' Pin tarihlerini PlanDetay'dan oku (varsa), yoksa sifir kullan
+   Dim ucPinT() As Double
+   ReDim ucPinT(0 To ucakSayisi - 1, 0 To 7)
+   Dim wsP2 As Worksheet
+   Dim jp As Long, admp As Integer
+   On Error Resume Next
+   Set wsP2 = ThisWorkbook.Sheets("PlanDetay")
+   On Error GoTo 0
+   If Not wsP2 Is Nothing Then
+       For jp = 0 To ucakSayisi - 1
+           For admp = 0 To 7
+               Dim pv2 As Variant: pv2 = wsP2.Cells(jp + 2, 30 + admp).Value
+               If IsNumeric(pv2) Then
+                   If CDbl(pv2) > 0 Then ucPinT(jp, admp) = CDbl(pv2)
+               End If
+           Next admp
+       Next jp
+   End If
+ 
+   Call GuncelleVeCizPin(ucNo, ucDurus, ucCoji1Sure, ucWindSure, ucMateSure, ucOutSure, ucLaySure, ucBoyaSure, ucSealSure, ucFinalSure, ucakSayisi, aySayisi, ucPinT)
+End Sub
+ 
+' ====================================================
+' MAKRO 1: URETIM PLANI OLUSTUR
+' ====================================================
+Sub UretimPlaniOlustur()
+   On Error GoTo Hata
+   Application.ScreenUpdating = False
+   Call TatilleriOlustur
+ 
+   Dim ilkUcak As Long, ucakSayisi As Long, aySayisi As Integer
+ 
+   ilkUcak = CLng(InputBox("Ilk ucak numarasi:", "Uretim Plani", "503"))
+   ucakSayisi = CLng(InputBox("Kac ucak planlanacak:", "Uretim Plani", "10"))
+   gNormalVardiya = CInt(InputBox("Normal gunlerde vardiya sayisi (2 veya 3):", "Uretim Plani", "2"))
+   If gNormalVardiya < 1 Or gNormalVardiya > 4 Then gNormalVardiya = 2
+ 
+   Application.ScreenUpdating = True
+   Dim tt As Integer, cvp As VbMsgBoxResult
+   For tt = 0 To gTatilSayisi - 1
+       cvp = MsgBox(TatilAdi(tt) & vbCrLf & vbCrLf & "Bu tatilde calisma yapilacak mi?", vbYesNo + vbQuestion, "Tatil Ayarlari")
+       If cvp = vbYes Then
+           gTatilCalis(tt) = True
+           gTatilVardiya(tt) = CInt(InputBox(TatilAdi(tt) & vbCrLf & "Kac vardiya calisilacak:", "Tatil Ayarlari", CStr(gNormalVardiya)))
+           If gTatilVardiya(tt) < 1 Then gTatilVardiya(tt) = 1
+       Else
+           gTatilCalis(tt) = False: gTatilVardiya(tt) = 0
+       End If
+   Next tt
+   Application.ScreenUpdating = False
+ 
+   Dim c1BasT As Date, c1BasV As Integer
+   Dim c2BasT As Date, c2BasV As Integer
+ 
+   c1BasT = CDate(InputBox("COJI 1 musait baslangic tarihi? (GG.AA.YYYY):", "Uretim Plani", "01.04.2026"))
+   c1BasV = CInt(InputBox("COJI 1 baslangic vardiyasi? (1=S1, 2=S2, 3=S3):", "Uretim Plani", "1")) - 1
+   If c1BasV < 0 Then c1BasV = 0
+   c2BasT = CDate(InputBox("COJI 2 musait baslangic tarihi? (GG.AA.YYYY):", "Uretim Plani", "01.04.2026"))
+   c2BasV = CInt(InputBox("COJI 2 baslangic vardiyasi? (1=S1, 2=S2, 3=S3):", "Uretim Plani", "1")) - 1
+   If c2BasV < 0 Then c2BasV = 0
+   aySayisi = CInt(InputBox("Kac ay planlanacak:", "Uretim Plani", "6"))
+ 
+   Dim ucNo() As Long, ucDurus() As Integer
+   Dim ucCoji1Sure() As Integer, ucWindSure() As Integer, ucMateSure() As Integer
+   Dim ucOutSure() As Integer, ucLaySure() As Integer, ucBoyaSure() As Integer
+   Dim ucSealSure() As Integer, ucFinalSure() As Integer
+ 
+   ReDim ucNo(0 To ucakSayisi - 1):       ReDim ucDurus(0 To ucakSayisi - 1)
+   ReDim ucCoji1Sure(0 To ucakSayisi - 1): ReDim ucWindSure(0 To ucakSayisi - 1)
+   ReDim ucMateSure(0 To ucakSayisi - 1):  ReDim ucOutSure(0 To ucakSayisi - 1)
+   ReDim ucLaySure(0 To ucakSayisi - 1):   ReDim ucBoyaSure(0 To ucakSayisi - 1)
+   ReDim ucSealSure(0 To ucakSayisi - 1):  ReDim ucFinalSure(0 To ucakSayisi - 1)
+ 
+   Dim i As Long
+   For i = 0 To ucakSayisi - 1
+       ucNo(i) = ilkUcak + i
+       ucDurus(i) = 0
+       ucCoji1Sure(i) = COJI1_SURE
+       ucWindSure(i) = WINDSHIELD_SURE
+       ucMateSure(i) = MATE_SURE
+       ucOutSure(i) = OUTOF_SURE
+       ucLaySure(i) = LAYOFF_SURE
+       ucBoyaSure(i) = BOYA_SURE
+       ucSealSure(i) = SEALANT_SURE
+       ucFinalSure(i) = FINAL_SURE
+   Next i
+ 
+   Call AyarlariKaydet(c1BasT, c1BasV, c2BasT, c2BasV)
+   Dim wsAy As Worksheet: Set wsAy = ThisWorkbook.Sheets("Ayarlar")
+   wsAy.Cells(1, 7).Value = aySayisi
+ 
+   Call GuncelleVeCiz(ucNo, ucDurus, ucCoji1Sure, ucWindSure, ucMateSure, ucOutSure, ucLaySure, ucBoyaSure, ucSealSure, ucFinalSure, ucakSayisi, aySayisi)
+ 
+   Application.ScreenUpdating = True
+   MsgBox ucakSayisi & " ucak planlandi!", vbInformation, "Tamam"
+   Exit Sub
+Hata:
+   Application.ScreenUpdating = True
+   MsgBox "Hata: " & Err.Description, vbCritical
+End Sub
+ 
+' ====================================================
+' MAKRO 2: SURE DEGISIMI
+' ====================================================
+Sub UcakSureDegisimi()
+   On Error GoTo Hata2
+   If Not AyarlariOku() Then MsgBox "Once UretimPlaniOlustur calistirin!", vbExclamation: Exit Sub
+ 
+   Dim wsAy As Worksheet: Set wsAy = ThisWorkbook.Sheets("Ayarlar")
+   Dim aySayisi As Integer: aySayisi = CInt(wsAy.Cells(1, 7).Value)
+   Dim wsP As Worksheet: Set wsP = ThisWorkbook.Sheets("PlanDetay")
+   Dim ucakSayisi As Long: ucakSayisi = wsP.Cells(wsP.Rows.Count, 1).End(xlUp).Row - 1
+   If ucakSayisi < 1 Then MsgBox "PlanDetay bos!", vbExclamation: Exit Sub
+ 
+   Dim ucNo() As Long, ucDurus() As Integer
+   Dim ucCoji1Sure() As Integer, ucWindSure() As Integer, ucMateSure() As Integer
+   Dim ucOutSure() As Integer, ucLaySure() As Integer, ucBoyaSure() As Integer
+   Dim ucSealSure() As Integer, ucFinalSure() As Integer
+   ReDim ucNo(0 To ucakSayisi - 1):       ReDim ucDurus(0 To ucakSayisi - 1)
+   ReDim ucCoji1Sure(0 To ucakSayisi - 1): ReDim ucWindSure(0 To ucakSayisi - 1)
+   ReDim ucMateSure(0 To ucakSayisi - 1):  ReDim ucOutSure(0 To ucakSayisi - 1)
+   ReDim ucLaySure(0 To ucakSayisi - 1):   ReDim ucBoyaSure(0 To ucakSayisi - 1)
+   ReDim ucSealSure(0 To ucakSayisi - 1):  ReDim ucFinalSure(0 To ucakSayisi - 1)
+   Call PlanDetayOku(ucNo, ucDurus, ucCoji1Sure, ucWindSure, ucMateSure, ucOutSure, ucLaySure, ucBoyaSure, ucSealSure, ucFinalSure, ucakSayisi)
+ 
+   Dim gecUcak As Long: gecUcak = CLng(InputBox("Ucak numarasi:", "Sure Degisimi"))
+   Dim gecIdx As Long: gecIdx = -1
+   Dim i As Long
+   For i = 0 To ucakSayisi - 1
+       If ucNo(i) = gecUcak Then gecIdx = i: Exit For
+   Next i
+   If gecIdx = -1 Then MsgBox "Ucak bulunamadi!", vbExclamation: Exit Sub
+ 
+   Dim asama As String
+   asama = InputBox("Hangi asama?" & vbCrLf & _
+                    "1 = COJI1" & vbCrLf & "2 = WINDSHIELD" & vbCrLf & "3 = MATE" & vbCrLf & _
+                    "4 = OUT OF" & vbCrLf & "5 = LAY OFF" & vbCrLf & _
+                    "6 = BOYA" & vbCrLf & "7 = SEALANT" & vbCrLf & "8 = FINAL", "Sure Degisimi", "1")
+   Dim asamaNo As Integer: asamaNo = CInt(asama)
+   If asamaNo < 1 Or asamaNo > 8 Then MsgBox "Gecersiz asama!", vbExclamation: Exit Sub
+ 
+   Dim degisim As Integer
+   degisim = CInt(InputBox("Kac vardiya degisim? (+ arttir, - azalt)", "Sure Degisimi", "2"))
+ 
+   Application.ScreenUpdating = False
+   Select Case asamaNo
+       Case 1: ucCoji1Sure(gecIdx) = Application.Max(1, ucCoji1Sure(gecIdx) + degisim)
+       Case 2: ucWindSure(gecIdx) = Application.Max(1, ucWindSure(gecIdx) + degisim)
+       Case 3: ucMateSure(gecIdx) = Application.Max(1, ucMateSure(gecIdx) + degisim)
+       Case 4: ucOutSure(gecIdx) = Application.Max(1, ucOutSure(gecIdx) + degisim)
+       Case 5: ucLaySure(gecIdx) = Application.Max(1, ucLaySure(gecIdx) + degisim)
+       Case 6: ucBoyaSure(gecIdx) = Application.Max(1, ucBoyaSure(gecIdx) + degisim)
+       Case 7: ucSealSure(gecIdx) = Application.Max(1, ucSealSure(gecIdx) + degisim)
+       Case 8: ucFinalSure(gecIdx) = Application.Max(1, ucFinalSure(gecIdx) + degisim)
+   End Select
+ 
+   Call GuncelleVeCiz(ucNo, ucDurus, ucCoji1Sure, ucWindSure, ucMateSure, ucOutSure, ucLaySure, ucBoyaSure, ucSealSure, ucFinalSure, ucakSayisi, aySayisi)
+   Application.ScreenUpdating = True
+   MsgBox "Guncellendi!", vbInformation
+   Exit Sub
+Hata2:
+   Application.ScreenUpdating = True
+   MsgBox "Hata: " & Err.Description, vbCritical
+End Sub
+ 
+' ====================================================
+' MAKRO 3: DURUS EKLEME / CIKARMA
+' ====================================================
+Sub DurusEkleme()
+   On Error GoTo Hata3
+   If Not AyarlariOku() Then MsgBox "Once UretimPlaniOlustur calistirin!", vbExclamation: Exit Sub
+ 
+   Dim wsAy As Worksheet: Set wsAy = ThisWorkbook.Sheets("Ayarlar")
+   Dim aySayisi As Integer: aySayisi = CInt(wsAy.Cells(1, 7).Value)
+   Dim wsP As Worksheet: Set wsP = ThisWorkbook.Sheets("PlanDetay")
+   Dim ucakSayisi As Long: ucakSayisi = wsP.Cells(wsP.Rows.Count, 1).End(xlUp).Row - 1
+   If ucakSayisi < 1 Then MsgBox "PlanDetay bos!", vbExclamation: Exit Sub
+ 
+   Dim ucNo() As Long, ucDurus() As Integer
+   Dim ucCoji1Sure() As Integer, ucWindSure() As Integer, ucMateSure() As Integer
+   Dim ucOutSure() As Integer, ucLaySure() As Integer, ucBoyaSure() As Integer
+   Dim ucSealSure() As Integer, ucFinalSure() As Integer
+   ReDim ucNo(0 To ucakSayisi - 1):       ReDim ucDurus(0 To ucakSayisi - 1)
+   ReDim ucCoji1Sure(0 To ucakSayisi - 1): ReDim ucWindSure(0 To ucakSayisi - 1)
+   ReDim ucMateSure(0 To ucakSayisi - 1):  ReDim ucOutSure(0 To ucakSayisi - 1)
+   ReDim ucLaySure(0 To ucakSayisi - 1):   ReDim ucBoyaSure(0 To ucakSayisi - 1)
+   ReDim ucSealSure(0 To ucakSayisi - 1):  ReDim ucFinalSure(0 To ucakSayisi - 1)
+   Call PlanDetayOku(ucNo, ucDurus, ucCoji1Sure, ucWindSure, ucMateSure, ucOutSure, ucLaySure, ucBoyaSure, ucSealSure, ucFinalSure, ucakSayisi)
+ 
+   Dim durUcak As Long
+   durUcak = CLng(InputBox("Hangi ucaktan ONCE durus eklenecek/cikarilacak?", "Durus Islemleri"))
+   Dim durIdx As Long: durIdx = -1
+   Dim i As Long
+   For i = 0 To ucakSayisi - 1
+       If ucNo(i) = durUcak Then durIdx = i: Exit For
+   Next i
+   If durIdx = -1 Then MsgBox "Ucak bulunamadi!", vbExclamation: Exit Sub
+ 
+   Dim mevcutDurus As Integer: mevcutDurus = ucDurus(durIdx)
+   Dim degisim As Integer
+   degisim = CInt(InputBox("Kac vardiya durus? (+ ekle, - azalt)" & vbCrLf & _
+                           "Mevcut: " & mevcutDurus & " vardiya", "Durus Islemleri", "3"))
+ 
+   If degisim < 0 And mevcutDurus = 0 Then
+       MsgBox "Bu ucagin daha once durуsu yok, eksi girilemez!", vbExclamation: Exit Sub
+   End If
+ 
+   Dim yeniDurus As Integer: yeniDurus = mevcutDurus + degisim
+   If yeniDurus < 0 Then yeniDurus = 0
+ 
+   Application.ScreenUpdating = False
+   ucDurus(durIdx) = yeniDurus
+ 
+   Call GuncelleVeCiz(ucNo, ucDurus, ucCoji1Sure, ucWindSure, ucMateSure, ucOutSure, ucLaySure, ucBoyaSure, ucSealSure, ucFinalSure, ucakSayisi, aySayisi)
+   Application.ScreenUpdating = True
+   MsgBox "Guncellendi! Ucak " & durUcak & " oncesi durus: " & yeniDurus & " vardiya", vbInformation
+   Exit Sub
+Hata3:
+   Application.ScreenUpdating = True
+   MsgBox "Hata: " & Err.Description, vbCritical
+End Sub
+ 
+' ====================================================
+' MAKRO 4: STEP TARIH DEGISIMI
+' ====================================================
+' PlanDetay'da her ucak icin sutun 30-37 = Pin tarihleri
+' (0 = serbest, dolu = o adim en erken bu tarihte baslar)
+' Bu makro ilgili hucreyi gunceller, GuncelleVeCizPin cagrilir
+ 
+Sub StepTarihDegisimi()
+   On Error GoTo Hata4
+   If Not AyarlariOku() Then MsgBox "Once UretimPlaniOlustur calistirin!", vbExclamation: Exit Sub
+ 
+   Dim wsAy As Worksheet: Set wsAy = ThisWorkbook.Sheets("Ayarlar")
+   Dim aySayisi As Integer: aySayisi = CInt(wsAy.Cells(1, 7).Value)
+   Dim wsP As Worksheet: Set wsP = ThisWorkbook.Sheets("PlanDetay")
+   Dim ucakSayisi As Long: ucakSayisi = wsP.Cells(wsP.Rows.Count, 1).End(xlUp).Row - 1
+   If ucakSayisi < 1 Then MsgBox "PlanDetay bos!", vbExclamation: Exit Sub
+ 
+   ' Ucak sec
+   Dim hedefUcak As Long: hedefUcak = CLng(InputBox("Ucak numarasi:", "Step Tarih Degisimi"))
+   Dim hedefIdx As Long: hedefIdx = -1
+   Dim i As Long
+   For i = 0 To ucakSayisi - 1
+       If CLng(wsP.Cells(i + 2, 1).Value) = hedefUcak Then hedefIdx = i: Exit For
+   Next i
+   If hedefIdx = -1 Then MsgBox "Ucak bulunamadi!", vbExclamation: Exit Sub
+ 
+   ' Adim sec
+   Dim adimStr As String
+   adimStr = InputBox("Hangi adim?" & vbCrLf & _
+                      "1 = COJI 1" & vbCrLf & _
+                      "2 = WINDSHIELD" & vbCrLf & _
+                      "3 = MATE" & vbCrLf & _
+                      "4 = OUT OF" & vbCrLf & _
+                      "5 = LAY OFF" & vbCrLf & _
+                      "6 = BOYA" & vbCrLf & _
+                      "7 = SEALANT" & vbCrLf & _
+                      "8 = FINAL", "Step Tarih Degisimi", "1")
+   Dim adimNo As Integer: adimNo = CInt(adimStr)
+   If adimNo < 1 Or adimNo > 8 Then MsgBox "Gecersiz adim!", vbExclamation: Exit Sub
+ 
+   ' Yeni baslangic tarihi
+   Dim yeniTarihStr As String
+   Dim adimAdlari(1 To 8) As String
+   adimAdlari(1) = "COJI 1": adimAdlari(2) = "WINDSHIELD": adimAdlari(3) = "MATE"
+   adimAdlari(4) = "OUT OF": adimAdlari(5) = "LAY OFF": adimAdlari(6) = "BOYA"
+   adimAdlari(7) = "SEALANT": adimAdlari(8) = "FINAL"
+ 
+   ' Mevcut pin tarihini varsayilan olarak goster
+   Dim mevcutPin As String
+   Dim pinHucre As Variant: pinHucre = wsP.Cells(hedefIdx + 2, 29 + adimNo).Value
+   If pinHucre = 0 Or pinHucre = "" Then
+       mevcutPin = Format(Now, "DD.MM.YYYY")
+   Else
+       mevcutPin = Format(CDate(pinHucre), "DD.MM.YYYY")
+   End If
+ 
+   yeniTarihStr = InputBox("Ucak " & hedefUcak & " - " & adimAdlari(adimNo) & vbCrLf & _
+                           "Yeni baslangic tarihi (GG.AA.YYYY):" & vbCrLf & _
+                           "(Bos birakir veya 0 girerseniz sabitleme kaldirilir)", _
+                           "Step Tarih Degisimi", mevcutPin)
+ 
+   ' Tum plani yeniden hesapla (pin bilgileriyle)
+   Application.ScreenUpdating = False
+ 
+   Dim ucNo() As Long, ucDurus() As Integer
+   Dim ucCoji1Sure() As Integer, ucWindSure() As Integer, ucMateSure() As Integer
+   Dim ucOutSure() As Integer, ucLaySure() As Integer, ucBoyaSure() As Integer
+   Dim ucSealSure() As Integer, ucFinalSure() As Integer
+   ReDim ucNo(0 To ucakSayisi - 1):        ReDim ucDurus(0 To ucakSayisi - 1)
+   ReDim ucCoji1Sure(0 To ucakSayisi - 1): ReDim ucWindSure(0 To ucakSayisi - 1)
+   ReDim ucMateSure(0 To ucakSayisi - 1):  ReDim ucOutSure(0 To ucakSayisi - 1)
+   ReDim ucLaySure(0 To ucakSayisi - 1):   ReDim ucBoyaSure(0 To ucakSayisi - 1)
+   ReDim ucSealSure(0 To ucakSayisi - 1):  ReDim ucFinalSure(0 To ucakSayisi - 1)
+   Call PlanDetayOku(ucNo, ucDurus, ucCoji1Sure, ucWindSure, ucMateSure, ucOutSure, ucLaySure, ucBoyaSure, ucSealSure, ucFinalSure, ucakSayisi)
+ 
+   ' Once mevcut pin tarihlerini oku
+   Dim ucPinT() As Double
+   ReDim ucPinT(0 To ucakSayisi - 1, 0 To 7)
+   Dim j As Long, adm As Integer
+   For j = 0 To ucakSayisi - 1
+       For adm = 0 To 7
+           Dim pv As Variant: pv = wsP.Cells(j + 2, 30 + adm).Value
+           If IsNumeric(pv) Then
+               If CDbl(pv) > 0 Then ucPinT(j, adm) = CDbl(pv)
+           End If
+       Next adm
+   Next j
+ 
+   ' Sonra yeni pin degerini diziye yaz (PlanDetay silinecegi icin onceden al)
+   If yeniTarihStr = "" Or yeniTarihStr = "0" Then
+       ucPinT(hedefIdx, adimNo - 1) = 0
+   Else
+       ucPinT(hedefIdx, adimNo - 1) = CDbl(CDate(yeniTarihStr))
+   End If
+ 
+   Call GuncelleVeCizPin(ucNo, ucDurus, ucCoji1Sure, ucWindSure, ucMateSure, ucOutSure, ucLaySure, ucBoyaSure, ucSealSure, ucFinalSure, ucakSayisi, aySayisi, ucPinT)
+ 
+   Application.ScreenUpdating = True
+   If yeniTarihStr = "" Or yeniTarihStr = "0" Then
+       MsgBox "Ucak " & hedefUcak & " - " & adimAdlari(adimNo) & " sabitleme kaldirildi!", vbInformation
+   Else
+       MsgBox "Ucak " & hedefUcak & " - " & adimAdlari(adimNo) & " baslangici " & Format(CDate(yeniTarihStr), "DD.MM.YYYY") & " olarak sabitlendi!", vbInformation
+   End If
+   Exit Sub
+Hata4:
+   Application.ScreenUpdating = True
+   MsgBox "Hata: " & Err.Description, vbCritical
+End Sub
+ 
+' ====================================================
+' GuncelleVeCizPin - Pin tarihleriyle hesaplama
+' ====================================================
+Sub GuncelleVeCizPin( _
+   ucNo() As Long, ucDurus() As Integer, _
+   ucCoji1Sure() As Integer, ucWindSure() As Integer, ucMateSure() As Integer, _
+   ucOutSure() As Integer, ucLaySure() As Integer, ucBoyaSure() As Integer, _
+   ucSealSure() As Integer, ucFinalSure() As Integer, _
+   ucakSayisi As Long, aySayisi As Integer, ucPinT() As Double)
+ 
+   Dim wsAy As Worksheet: Set wsAy = ThisWorkbook.Sheets("Ayarlar")
+   Dim c1BasT As Date, c1BasV As Integer, c2BasT As Date, c2BasV As Integer
+   Call BaslangicBilgisiOku(c1BasT, c1BasV, c2BasT, c2BasV)
+   Dim enErken As Date
+   If c1BasT <= c2BasT Then enErken = c1BasT Else enErken = c2BasT
+ 
+   Dim ucDurusBasT() As Date, ucDurusBasV() As Integer, ucDurusBitT() As Date, ucDurusBitV() As Integer
+   Dim ucC1BasT() As Date, ucC1BasV() As Integer, ucC1BitT() As Date, ucC1BitV() As Integer, ucC1Hat() As Integer
+   Dim ucWinBasT() As Date, ucWinBasV() As Integer, ucWinBitT() As Date, ucWinBitV() As Integer, ucWinHat() As Integer
+   Dim ucMateBasT() As Date, ucMateBasV() As Integer, ucMateBitT() As Date, ucMateBitV() As Integer, ucMateHat() As Integer
+   Dim ucOutBasT() As Date, ucOutBasV() As Integer, ucOutBitT() As Date, ucOutBitV() As Integer
+   Dim ucLayBasT() As Date, ucLayBasV() As Integer, ucLayBitT() As Date, ucLayBitV() As Integer
+   Dim ucBoyaBasT() As Date, ucBoyaBasV() As Integer, ucBoyaBitT() As Date, ucBoyaBitV() As Integer
+   Dim ucSealBasT() As Date, ucSealBasV() As Integer, ucSealBitT() As Date, ucSealBitV() As Integer
+   Dim ucFinalBasT() As Date, ucFinalBasV() As Integer, ucFinalBitT() As Date, ucFinalBitV() As Integer
+ 
+   Call TumHesaplaPin(ucNo, ucDurus, ucCoji1Sure, ucWindSure, ucMateSure, ucOutSure, ucLaySure, ucBoyaSure, ucSealSure, ucFinalSure, _
+                   ucakSayisi, c1BasT, c1BasV, c2BasT, c2BasV, ucPinT, _
+                   ucDurusBasT, ucDurusBasV, ucDurusBitT, ucDurusBitV, _
+                   ucC1BasT, ucC1BasV, ucC1BitT, ucC1BitV, ucC1Hat, _
+                   ucWinBasT, ucWinBasV, ucWinBitT, ucWinBitV, ucWinHat, _
+                   ucMateBasT, ucMateBasV, ucMateBitT, ucMateBitV, ucMateHat, _
+                   ucOutBasT, ucOutBasV, ucOutBitT, ucOutBitV, _
+                   ucLayBasT, ucLayBasV, ucLayBitT, ucLayBitV, _
+                   ucBoyaBasT, ucBoyaBasV, ucBoyaBitT, ucBoyaBitV, _
+                   ucSealBasT, ucSealBasV, ucSealBitT, ucSealBitV, _
+                   ucFinalBasT, ucFinalBasV, ucFinalBitT, ucFinalBitV)
+ 
+   Call GorselOlustur(ucNo, ucDurus, _
+                      ucC1BasT, ucC1BasV, ucC1BitT, ucC1BitV, ucC1Hat, _
+                      ucWinBasT, ucWinBasV, ucWinBitT, ucWinBitV, ucWinHat, _
+                      ucMateBasT, ucMateBasV, ucMateBitT, ucMateBitV, ucMateHat, _
+                      ucOutBasT, ucOutBasV, ucOutBitT, ucOutBitV, _
+                      ucLayBasT, ucLayBasV, ucLayBitT, ucLayBitV, _
+                      ucBoyaBasT, ucBoyaBasV, ucBoyaBitT, ucBoyaBitV, _
+                      ucSealBasT, ucSealBasV, ucSealBitT, ucSealBitV, _
+                      ucFinalBasT, ucFinalBasV, ucFinalBitT, ucFinalBitV, _
+                      ucDurusBasT, ucDurusBasV, ucDurusBitT, ucDurusBitV, _
+                      ucakSayisi, aySayisi, enErken)
+ 
+   ' PlanDetay'i tamamen yeniden olustur (pin bilgilerini de yaz)
+   On Error Resume Next: Application.DisplayAlerts = False
+   ThisWorkbook.Sheets("PlanDetay").Delete
+   Application.DisplayAlerts = True: On Error GoTo 0
+   Dim wsP As Worksheet
+   Set wsP = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+   wsP.Name = "PlanDetay": wsP.Cells.Font.Name = "Calibri"
+ 
+   Dim basliklar As Variant
+   basliklar = Array("Ucak", "Durus", "C1Sure", "WinSure", "MateSure", "OutSure", "LaySure", "BoyaSure", "SealSure", "FinalSure", _
+                     "C1Hat", "C1Bas", "C1Bit", "WinHat", "WinBas", "WinBit", "MateHat", "MateBas", "MateBit", _
+                     "OutBas", "OutBit", "LayBas", "LayBit", "BoyaBas", "BoyaBit", "SealBas", "SealBit", "FinalBas", "FinalBit", _
+                     "PinC1", "PinWin", "PinMate", "PinOut", "PinLay", "PinBoya", "PinSeal", "PinFinal")
+   Dim k As Integer
+   For k = 0 To UBound(basliklar)
+       wsP.Cells(1, k + 1).Value = basliklar(k)
+   Next k
+   wsP.Range(wsP.Cells(1, 1), wsP.Cells(1, UBound(basliklar) + 1)).Font.Bold = True
+   wsP.Range(wsP.Cells(1, 1), wsP.Cells(1, UBound(basliklar) + 1)).Interior.Color = RGB(0, 80, 160)
+   wsP.Range(wsP.Cells(1, 1), wsP.Cells(1, UBound(basliklar) + 1)).Font.Color = RGB(255, 255, 255)
+ 
+   Dim i As Long
+   For i = 0 To ucakSayisi - 1
+       Dim r As Long: r = i + 2
+       wsP.Cells(r, 1).Value = ucNo(i)
+       wsP.Cells(r, 2).Value = ucDurus(i)
+       wsP.Cells(r, 3).Value = ucCoji1Sure(i)
+       wsP.Cells(r, 4).Value = ucWindSure(i)
+       wsP.Cells(r, 5).Value = ucMateSure(i)
+       wsP.Cells(r, 6).Value = ucOutSure(i)
+       wsP.Cells(r, 7).Value = ucLaySure(i)
+       wsP.Cells(r, 8).Value = ucBoyaSure(i)
+       wsP.Cells(r, 9).Value = ucSealSure(i)
+       wsP.Cells(r, 10).Value = ucFinalSure(i)
+       wsP.Cells(r, 11).Value = ucC1Hat(i)
+       wsP.Cells(r, 12).Value = ucC1BasT(i):   wsP.Cells(r, 12).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 13).Value = ucC1BitT(i):   wsP.Cells(r, 13).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 14).Value = ucWinHat(i)
+       wsP.Cells(r, 15).Value = ucWinBasT(i):  wsP.Cells(r, 15).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 16).Value = ucWinBitT(i):  wsP.Cells(r, 16).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 17).Value = ucMateHat(i)
+       wsP.Cells(r, 18).Value = ucMateBasT(i): wsP.Cells(r, 18).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 19).Value = ucMateBitT(i): wsP.Cells(r, 19).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 20).Value = ucOutBasT(i):  wsP.Cells(r, 20).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 21).Value = ucOutBitT(i):  wsP.Cells(r, 21).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 22).Value = ucLayBasT(i):  wsP.Cells(r, 22).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 23).Value = ucLayBitT(i):  wsP.Cells(r, 23).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 24).Value = ucBoyaBasT(i): wsP.Cells(r, 24).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 25).Value = ucBoyaBitT(i): wsP.Cells(r, 25).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 26).Value = ucSealBasT(i): wsP.Cells(r, 26).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 27).Value = ucSealBitT(i): wsP.Cells(r, 27).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 28).Value = ucFinalBasT(i):wsP.Cells(r, 28).NumberFormat = "DD.MM.YYYY"
+       wsP.Cells(r, 29).Value = ucFinalBitT(i):wsP.Cells(r, 29).NumberFormat = "DD.MM.YYYY"
+       ' Pin tarihleri (30-37)
+       Dim adm2 As Integer
+       For adm2 = 0 To 7
+           If ucPinT(i, adm2) <> 0 Then
+               wsP.Cells(r, 30 + adm2).Value = ucPinT(i, adm2)
+               wsP.Cells(r, 30 + adm2).NumberFormat = "DD.MM.YYYY"
+               wsP.Cells(r, 30 + adm2).Interior.Color = RGB(255, 220, 150)
+           Else
+               wsP.Cells(r, 30 + adm2).Value = 0
+           End If
+       Next adm2
+       wsP.Range(wsP.Cells(r, 1), wsP.Cells(r, 29)).Interior.Color = UcakRenk(i)
+   Next i
+   wsP.Columns("A:AK").AutoFit
+End Sub
+ 
+' ====================================================
+' TumHesaplaPin - Pin tarihleri destekli hesaplama
+' ucPinT(i, 0..7): 0=C1, 1=Win, 2=Mate, 3=Out, 4=Lay, 5=Boya, 6=Seal, 7=Final
+' ====================================================
+Sub TumHesaplaPin( _
+   ucNo() As Long, ucDurus() As Integer, _
+   ucCoji1Sure() As Integer, ucWindSure() As Integer, ucMateSure() As Integer, _
+   ucOutSure() As Integer, ucLaySure() As Integer, ucBoyaSure() As Integer, _
+   ucSealSure() As Integer, ucFinalSure() As Integer, _
+   ucakSayisi As Long, _
+   c1BasT As Date, c1BasV As Integer, _
+   c2BasT As Date, c2BasV As Integer, _
+   ucPinT() As Double, _
+   ucDurusBasT() As Date, ucDurusBasV() As Integer, ucDurusBitT() As Date, ucDurusBitV() As Integer, _
+   ucC1BasT() As Date, ucC1BasV() As Integer, ucC1BitT() As Date, ucC1BitV() As Integer, _
+   ucC1Hat() As Integer, _
+   ucWinBasT() As Date, ucWinBasV() As Integer, ucWinBitT() As Date, ucWinBitV() As Integer, _
+   ucWinHat() As Integer, _
+   ucMateBasT() As Date, ucMateBasV() As Integer, ucMateBitT() As Date, ucMateBitV() As Integer, _
+   ucMateHat() As Integer, _
+   ucOutBasT() As Date, ucOutBasV() As Integer, ucOutBitT() As Date, ucOutBitV() As Integer, _
+   ucLayBasT() As Date, ucLayBasV() As Integer, ucLayBitT() As Date, ucLayBitV() As Integer, _
+   ucBoyaBasT() As Date, ucBoyaBasV() As Integer, ucBoyaBitT() As Date, ucBoyaBitV() As Integer, _
+   ucSealBasT() As Date, ucSealBasV() As Integer, ucSealBitT() As Date, ucSealBitV() As Integer, _
+   ucFinalBasT() As Date, ucFinalBasV() As Integer, ucFinalBitT() As Date, ucFinalBitV() As Integer)
+ 
+   ReDim ucDurusBasT(0 To ucakSayisi - 1): ReDim ucDurusBasV(0 To ucakSayisi - 1)
+   ReDim ucDurusBitT(0 To ucakSayisi - 1): ReDim ucDurusBitV(0 To ucakSayisi - 1)
+   ReDim ucC1BasT(0 To ucakSayisi - 1):    ReDim ucC1BasV(0 To ucakSayisi - 1)
+   ReDim ucC1BitT(0 To ucakSayisi - 1):    ReDim ucC1BitV(0 To ucakSayisi - 1)
+   ReDim ucC1Hat(0 To ucakSayisi - 1)
+   ReDim ucWinBasT(0 To ucakSayisi - 1):   ReDim ucWinBasV(0 To ucakSayisi - 1)
+   ReDim ucWinBitT(0 To ucakSayisi - 1):   ReDim ucWinBitV(0 To ucakSayisi - 1)
+   ReDim ucWinHat(0 To ucakSayisi - 1)
+   ReDim ucMateBasT(0 To ucakSayisi - 1):  ReDim ucMateBasV(0 To ucakSayisi - 1)
+   ReDim ucMateBitT(0 To ucakSayisi - 1):  ReDim ucMateBitV(0 To ucakSayisi - 1)
+   ReDim ucMateHat(0 To ucakSayisi - 1)
+   ReDim ucOutBasT(0 To ucakSayisi - 1):   ReDim ucOutBasV(0 To ucakSayisi - 1)
+   ReDim ucOutBitT(0 To ucakSayisi - 1):   ReDim ucOutBitV(0 To ucakSayisi - 1)
+   ReDim ucLayBasT(0 To ucakSayisi - 1):   ReDim ucLayBasV(0 To ucakSayisi - 1)
+   ReDim ucLayBitT(0 To ucakSayisi - 1):   ReDim ucLayBitV(0 To ucakSayisi - 1)
+   ReDim ucBoyaBasT(0 To ucakSayisi - 1):  ReDim ucBoyaBasV(0 To ucakSayisi - 1)
+   ReDim ucBoyaBitT(0 To ucakSayisi - 1):  ReDim ucBoyaBitV(0 To ucakSayisi - 1)
+   ReDim ucSealBasT(0 To ucakSayisi - 1):  ReDim ucSealBasV(0 To ucakSayisi - 1)
+   ReDim ucSealBitT(0 To ucakSayisi - 1):  ReDim ucSealBitV(0 To ucakSayisi - 1)
+   ReDim ucFinalBasT(0 To ucakSayisi - 1): ReDim ucFinalBasV(0 To ucakSayisi - 1)
+   ReDim ucFinalBitT(0 To ucakSayisi - 1): ReDim ucFinalBitV(0 To ucakSayisi - 1)
+ 
+   Dim c1SonT(1 To COJI1_HAT) As Date, c1SonV(1 To COJI1_HAT) As Integer
+   Dim h As Integer
+   For h = 1 To COJI1_HAT: c1SonT(h) = c1BasT: c1SonV(h) = c1BasV: Next h
+ 
+   Dim c2SonT(1 To COJI2_HAT) As Date, c2SonV(1 To COJI2_HAT) As Integer
+   For h = 1 To COJI2_HAT: c2SonT(h) = c2BasT: c2SonV(h) = c2BasV: Next h
+ 
+   Dim enErkenT As Date
+   If c1BasT <= c2BasT Then enErkenT = c1BasT Else enErkenT = c2BasT
+ 
+   Dim outSonT As Date, outSonV As Integer
+   Dim laySonT As Date, laySonV As Integer
+   Dim boyaSonT As Date, boyaSonV As Integer
+   Dim sealSonT As Date, sealSonV As Integer
+   Dim finalSonT As Date, finalSonV As Integer
+   outSonT = enErkenT:   outSonV = 0
+   laySonT = enErkenT:   laySonV = 0
+   boyaSonT = enErkenT:  boyaSonV = 0
+   sealSonT = enErkenT:  sealSonV = 0
+   finalSonT = enErkenT: finalSonV = 0
+ 
+   Dim i As Long
+   Dim startT As Date, startV As Integer, bitT As Date, bitV As Integer
+   Dim c1H As Integer, c2H_win As Integer, c2H_mate As Integer
+   Dim enDusukKod As Double, kod As Double
+ 
+   ' Pin tarihi uygulama yardimcisi
+   ' Eger pin > hesaplanan baslangic ise pini kullan
+   Dim pinT As Date
+ 
+   For i = 0 To ucakSayisi - 1
+ 
+       ' --- DURUS ---
+       If ucDurus(i) > 0 Then
+           enDusukKod = PozKod(c1SonT(1), c1SonV(1)): c1H = 1
+           For h = 2 To COJI1_HAT
+               kod = PozKod(c1SonT(h), c1SonV(h))
+               If kod < enDusukKod Then enDusukKod = kod: c1H = h
+           Next h
+           startT = c1SonT(c1H): startV = c1SonV(c1H)
+           Call SonrakiBos(startT, startV)
+           ucDurusBasT(i) = startT: ucDurusBasV(i) = startV
+           Call Tuket(startT, startV, ucDurus(i), bitT, bitV)
+           ucDurusBitT(i) = bitT: ucDurusBitV(i) = bitV
+           c1SonT(c1H) = startT: c1SonV(c1H) = startV
+       End If
+ 
+       ' --- COJI1 (pin: adim 0) ---
+       enDusukKod = PozKod(c1SonT(1), c1SonV(1)): c1H = 1
+       For h = 2 To COJI1_HAT
+           kod = PozKod(c1SonT(h), c1SonV(h))
+           If kod < enDusukKod Then enDusukKod = kod: c1H = h
+       Next h
+       startT = c1SonT(c1H): startV = c1SonV(c1H)
+       Call SonrakiBos(startT, startV)
+       ' Pin uygula
+       If ucPinT(i, 0) > 0 Then
+           pinT = CDate(ucPinT(i, 0))
+           If pinT > startT Then startT = pinT: startV = 0
+           Call SonrakiBos(startT, startV)
+       End If
+       ucC1BasT(i) = startT: ucC1BasV(i) = startV
+       ucC1Hat(i) = c1H
+       Call Tuket(startT, startV, ucCoji1Sure(i), bitT, bitV)
+       ucC1BitT(i) = bitT: ucC1BitV(i) = bitV
+       c1SonT(c1H) = startT: c1SonV(c1H) = startV
+       Dim c1BitKod As Double: c1BitKod = PozKod(ucC1BitT(i), ucC1BitV(i))
+ 
+       ' --- WINDSHIELD (pin: adim 1) ---
+       Dim winReqT As Date: winReqT = ucC1BasT(i)
+       enDusukKod = PozKod(c2SonT(1), c2SonV(1)): c2H_win = 1
+       For h = 2 To COJI2_HAT
+           kod = PozKod(c2SonT(h), c2SonV(h))
+           If kod < enDusukKod Then enDusukKod = kod: c2H_win = h
+       Next h
+       If PozKod(c2SonT(c2H_win), c2SonV(c2H_win)) > PozKod(winReqT, 0) Then
+           startT = c2SonT(c2H_win): startV = c2SonV(c2H_win)
+       Else
+           startT = winReqT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       If ucPinT(i, 1) > 0 Then
+           pinT = CDate(ucPinT(i, 1))
+           If pinT > startT Then startT = pinT: startV = 0
+           Call SonrakiBos(startT, startV)
+       End If
+       ucWinBasT(i) = startT: ucWinBasV(i) = startV
+       ucWinHat(i) = c2H_win
+       Call Tuket(startT, startV, ucWindSure(i), bitT, bitV)
+       ucWinBitT(i) = bitT: ucWinBitV(i) = bitV
+       c2SonT(c2H_win) = startT: c2SonV(c2H_win) = startV
+       Dim winBitKod As Double: winBitKod = PozKod(ucWinBitT(i), ucWinBitV(i))
+ 
+       ' --- MATE (pin: adim 2) ---
+       Dim mateReqT As Date
+       If c1BitKod >= winBitKod Then
+           mateReqT = SonrakiIsGunu(ucC1BitT(i) + 1)
+       Else
+           mateReqT = SonrakiIsGunu(ucWinBitT(i) + 1)
+       End If
+       enDusukKod = PozKod(c2SonT(1), c2SonV(1)): c2H_mate = 1
+       For h = 2 To COJI2_HAT
+           kod = PozKod(c2SonT(h), c2SonV(h))
+           If kod < enDusukKod Then enDusukKod = kod: c2H_mate = h
+       Next h
+       If PozKod(c2SonT(c2H_mate), c2SonV(c2H_mate)) > PozKod(mateReqT, 0) Then
+           startT = c2SonT(c2H_mate): startV = c2SonV(c2H_mate)
+       Else
+           startT = mateReqT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       If ucPinT(i, 2) > 0 Then
+           pinT = CDate(ucPinT(i, 2))
+           If pinT > startT Then startT = pinT: startV = 0
+           Call SonrakiBos(startT, startV)
+       End If
+       ucMateBasT(i) = startT: ucMateBasV(i) = startV
+       ucMateHat(i) = c2H_mate
+       Call Tuket(startT, startV, ucMateSure(i), bitT, bitV)
+       ucMateBitT(i) = bitT: ucMateBitV(i) = bitV
+       c2SonT(c2H_mate) = startT: c2SonV(c2H_mate) = startV
+ 
+       Dim sonrakiT As Date: sonrakiT = SonrakiIsGunu(ucMateBitT(i) + 1)
+ 
+       ' --- OUT OF (pin: adim 3) ---
+       If PozKod(outSonT, outSonV) > PozKod(sonrakiT, 0) Then
+           startT = outSonT: startV = outSonV
+       Else
+           startT = sonrakiT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       If ucPinT(i, 3) > 0 Then
+           pinT = CDate(ucPinT(i, 3))
+           If pinT > startT Then startT = pinT: startV = 0
+           Call SonrakiBos(startT, startV)
+       End If
+       ucOutBasT(i) = startT: ucOutBasV(i) = startV
+       Call Tuket(startT, startV, ucOutSure(i), bitT, bitV)
+       ucOutBitT(i) = bitT: ucOutBitV(i) = bitV
+       outSonT = startT: outSonV = startV
+       sonrakiT = SonrakiIsGunu(ucOutBitT(i) + 1)
+ 
+       ' --- LAY OFF (pin: adim 4) ---
+       If PozKod(laySonT, laySonV) > PozKod(sonrakiT, 0) Then
+           startT = laySonT: startV = laySonV
+       Else
+           startT = sonrakiT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       If ucPinT(i, 4) > 0 Then
+           pinT = CDate(ucPinT(i, 4))
+           If pinT > startT Then startT = pinT: startV = 0
+           Call SonrakiBos(startT, startV)
+       End If
+       ucLayBasT(i) = startT: ucLayBasV(i) = startV
+       Call Tuket(startT, startV, ucLaySure(i), bitT, bitV)
+       ucLayBitT(i) = bitT: ucLayBitV(i) = bitV
+       laySonT = startT: laySonV = startV
+       sonrakiT = SonrakiIsGunu(ucLayBitT(i) + 1)
+ 
+       ' --- BOYA (pin: adim 5) ---
+       If PozKod(boyaSonT, boyaSonV) > PozKod(sonrakiT, 0) Then
+           startT = boyaSonT: startV = boyaSonV
+       Else
+           startT = sonrakiT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       If ucPinT(i, 5) > 0 Then
+           pinT = CDate(ucPinT(i, 5))
+           If pinT > startT Then startT = pinT: startV = 0
+           Call SonrakiBos(startT, startV)
+       End If
+       ucBoyaBasT(i) = startT: ucBoyaBasV(i) = startV
+       Call Tuket(startT, startV, ucBoyaSure(i), bitT, bitV)
+       ucBoyaBitT(i) = bitT: ucBoyaBitV(i) = bitV
+       boyaSonT = startT: boyaSonV = startV
+       sonrakiT = SonrakiIsGunu(ucBoyaBitT(i) + 1)
+ 
+       ' --- SEALANT (pin: adim 6) ---
+       If PozKod(sealSonT, sealSonV) > PozKod(sonrakiT, 0) Then
+           startT = sealSonT: startV = sealSonV
+       Else
+           startT = sonrakiT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       If ucPinT(i, 6) > 0 Then
+           pinT = CDate(ucPinT(i, 6))
+           If pinT > startT Then startT = pinT: startV = 0
+           Call SonrakiBos(startT, startV)
+       End If
+       ucSealBasT(i) = startT: ucSealBasV(i) = startV
+       Call Tuket(startT, startV, ucSealSure(i), bitT, bitV)
+       ucSealBitT(i) = bitT: ucSealBitV(i) = bitV
+       sealSonT = startT: sealSonV = startV
+       sonrakiT = SonrakiIsGunu(ucSealBitT(i) + 1)
+ 
+       ' --- FINAL (pin: adim 7) ---
+       If PozKod(finalSonT, finalSonV) > PozKod(sonrakiT, 0) Then
+           startT = finalSonT: startV = finalSonV
+       Else
+           startT = sonrakiT: startV = 0
+       End If
+       Call SonrakiBos(startT, startV)
+       If ucPinT(i, 7) > 0 Then
+           pinT = CDate(ucPinT(i, 7))
+           If pinT > startT Then startT = pinT: startV = 0
+           Call SonrakiBos(startT, startV)
+       End If
+       ucFinalBasT(i) = startT: ucFinalBasV(i) = startV
+       Call Tuket(startT, startV, ucFinalSure(i), bitT, bitV)
+       ucFinalBitT(i) = bitT: ucFinalBitV(i) = bitV
+       finalSonT = startT: finalSonV = startV
+ 
+   Next i
+End Sub
