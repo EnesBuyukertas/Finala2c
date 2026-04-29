@@ -1,0 +1,1407 @@
+Option Explicit
+ 
+' Plan verisi - PlanOlustur tarafindan doldurulur, HaftalikPlan tarafindan okunur
+Public gPlanVerisi() As Variant
+Public gPlanUcakSayisi As Long
+Public gPlanIlkUcak As Long
+Public gPlanBasTarih As Date
+ 
+' Double saati HH:MM formatina cevir (12.5 -> "12:30", 12.9999 -> "13:00")
+Function SaatFormat(s As Double) As String
+   Dim toplamDakika As Long
+   toplamDakika = CLng(s * 60)  ' Ondaligi dakikaya cevir, yuvarla
+   Dim saat As Integer: saat = CInt(toplamDakika \ 60) Mod 24
+   Dim dakika As Integer: dakika = CInt(toplamDakika Mod 60)
+   SaatFormat = Format(saat, "00") & ":" & Format(dakika, "00")
+End Function
+ 
+' ====================================================
+' GLOBAL DEGISKENLER
+' ====================================================
+Public gNormalVardiya As Integer
+Public gTatilGunler() As Date
+Public gTatilSayisi As Integer
+Public gTatilCalisiyorMu() As Boolean
+ 
+' ====================================================
+' SABITLER - OPERASYON SURELERI (SAAT)
+' ====================================================
+' COJI 1
+ 
+' WINDSHIELD
+ 
+' MATE
+ 
+' OUT OF COJI
+ 
+' LAY OFF
+ 
+' BOYA
+ 
+' SEALANT
+ 
+' FINAL
+ 
+' Hat sayilari
+ 
+' ====================================================
+' VARDIYA FONKSIYONLARI
+' ====================================================
+Function VardiyaBas(vNo As Integer) As Double
+   Select Case vNo
+       Case 1: VardiyaBas = 7#
+       Case 2: VardiyaBas = 15#
+       Case 3: VardiyaBas = 23#
+   End Select
+End Function
+ 
+Function VardiyaBit(vNo As Integer) As Double
+   Select Case vNo
+       Case 1: VardiyaBit = 15#
+       Case 2: VardiyaBit = 23#
+       Case 3: VardiyaBit = 31#  ' Ertesi gun 07:00
+   End Select
+End Function
+ 
+Function VardiyaMolaBas(vNo As Integer) As Double
+   Select Case vNo
+       Case 1: VardiyaMolaBas = 11.5   ' 11:30
+       Case 2: VardiyaMolaBas = 18#    ' 18:00
+       Case 3: VardiyaMolaBas = 26#    ' 02:00 (ertesi gun = 24+2)
+   End Select
+End Function
+ 
+Function VardiyaMolaBit(vNo As Integer) As Double
+   Select Case vNo
+       Case 1: VardiyaMolaBit = 12.5   ' 12:30
+       Case 2: VardiyaMolaBit = 19#    ' 19:00
+       Case 3: VardiyaMolaBit = 27#    ' 03:00 (ertesi gun = 24+3)
+   End Select
+End Function
+ 
+Function HangiVardiya(saatOfDay As Double) As Integer
+   Dim s As Double: s = saatOfDay
+   If s >= 23# Or s < 7# Then
+       If gNormalVardiya >= 3 Then HangiVardiya = 3: Exit Function
+   End If
+   If s >= 7# And s < 15# Then HangiVardiya = 1: Exit Function
+   If s >= 15# And s < 23# Then
+       If gNormalVardiya >= 2 Then HangiVardiya = 2: Exit Function
+   End If
+   HangiVardiya = 0
+End Function
+ 
+Function TatilMiGun(gunIdx As Long, basTarih As Date) As Boolean
+   Dim dd As Date: dd = basTarih + gunIdx
+   TatilMiGun = False
+   If Weekday(dd, vbMonday) = 7 Then TatilMiGun = True: Exit Function
+   Dim tt As Integer
+   For tt = 0 To gTatilSayisi - 1
+       If dd = gTatilGunler(tt) And Not gTatilCalisiyorMu(tt) Then
+           TatilMiGun = True: Exit Function
+       End If
+   Next tt
+End Function
+ 
+' ====================================================
+' ZAMAN HESAPLAMA
+' Zaman = (gunIdx As Long, saatOfDay As Double) - Double tuple yerine
+' ByRef ile geciyoruz
+' ====================================================
+Sub SaatEkle(ByRef gun As Long, ByRef saat As Double, netSaat As Double, basTarih As Date)
+   Dim kalan As Double: kalan = netSaat
+   Dim guvenlik As Long: guvenlik = 0
+ 
+   Do While kalan > 0.0001
+       guvenlik = guvenlik + 1
+       If guvenlik > 500000 Then Exit Do
+ 
+       ' Tatil atlama
+       Do While TatilMiGun(gun, basTarih)
+           gun = gun + 1
+           saat = VardiyaBas(1)
+       Loop
+ 
+       Dim v As Integer: v = HangiVardiya(saat)
+       If v = 0 Then
+           ' Sonraki vardiyanin basina atla
+           Dim sonV As Double: sonV = -1
+           Dim vv As Integer
+           For vv = 1 To gNormalVardiya
+               If VardiyaBas(vv) > saat Then
+                   sonV = VardiyaBas(vv): Exit For
+               End If
+           Next vv
+           If sonV < 0 Then
+               gun = gun + 1
+               Do While TatilMiGun(gun, basTarih): gun = gun + 1: Loop
+               saat = VardiyaBas(1)
+           Else
+               saat = sonV
+           End If
+       Else
+           Dim vMolaBas As Double: vMolaBas = VardiyaMolaBas(v)
+           Dim vMolaBit As Double: vMolaBit = VardiyaMolaBit(v)
+           Dim vBit As Double: vBit = VardiyaBit(v)
+ 
+           ' Molada mi?
+           If saat >= vMolaBas And saat < vMolaBit Then
+               saat = vMolaBit
+           ElseIf saat < vMolaBas Then
+               ' Moladan once
+               Dim molayaKadar As Double: molayaKadar = vMolaBas - saat
+               Dim molaSonrasi As Double: molaSonrasi = vBit - vMolaBit
+               Dim topNetV As Double: topNetV = molayaKadar + molaSonrasi
+ 
+               If kalan <= molayaKadar Then
+                   saat = saat + kalan: kalan = 0
+               ElseIf kalan <= topNetV Then
+                   kalan = kalan - molayaKadar
+                   saat = vMolaBit + kalan: kalan = 0
+               Else
+                   kalan = kalan - topNetV
+                   If v < gNormalVardiya Then
+                       saat = VardiyaBas(v + 1)
+                   Else
+                       gun = gun + 1
+                       Do While TatilMiGun(gun, basTarih): gun = gun + 1: Loop
+                       saat = VardiyaBas(1)
+                   End If
+               End If
+           Else
+               ' Moladan sonra
+               Dim kalanV As Double: kalanV = vBit - saat
+               If kalanV <= 0 Then
+                   If v < gNormalVardiya Then
+                       saat = VardiyaBas(v + 1)
+                   Else
+                       gun = gun + 1
+                       Do While TatilMiGun(gun, basTarih): gun = gun + 1: Loop
+                       saat = VardiyaBas(1)
+                   End If
+               ElseIf kalan <= kalanV Then
+                   saat = saat + kalan: kalan = 0
+               Else
+                   kalan = kalan - kalanV
+                   If v < gNormalVardiya Then
+                       saat = VardiyaBas(v + 1)
+                   Else
+                       gun = gun + 1
+                       Do While TatilMiGun(gun, basTarih): gun = gun + 1: Loop
+                       saat = VardiyaBas(1)
+                   End If
+               End If
+           End If
+       End If
+   Loop
+End Sub
+ 
+Sub IlkUygunZaman(ByRef gun As Long, ByRef saat As Double, basTarih As Date)
+   Do While TatilMiGun(gun, basTarih)
+       gun = gun + 1: saat = VardiyaBas(1)
+   Loop
+   Dim v As Integer: v = HangiVardiya(saat)
+   If v = 0 Then
+       Dim sonV As Double: sonV = -1
+       Dim vv As Integer
+       For vv = 1 To gNormalVardiya
+           If VardiyaBas(vv) > saat Then sonV = VardiyaBas(vv): Exit For
+       Next vv
+       If sonV < 0 Then
+           gun = gun + 1
+           Do While TatilMiGun(gun, basTarih): gun = gun + 1: Loop
+           saat = VardiyaBas(1)
+       Else
+           saat = sonV
+       End If
+   End If
+   ' Molada mi?
+   v = HangiVardiya(saat)
+   If v > 0 Then
+       If saat >= VardiyaMolaBas(v) And saat < VardiyaMolaBit(v) Then
+           saat = VardiyaMolaBit(v)
+       End If
+   End If
+End Sub
+ 
+' ====================================================
+' AYARLAR OKU
+' ====================================================
+Sub AyarlariOku(ByRef ilkUcak As Long, ByRef ucakSayisi As Long, _
+               ByRef c1BasGun As Long, ByRef c1BasSaat As Double, _
+               ByRef c2BasGun As Long, ByRef c2BasSaat As Double, _
+               ByRef basTarih As Date, ByRef gunSayisi As Long)
+ 
+   ilkUcak = CLng(InputBox("Ilk ucak numarasi:", "Plan Olustur", "501"))
+   ucakSayisi = CLng(InputBox("Kac ucak planlanacak:", "Plan Olustur", "5"))
+   gNormalVardiya = CInt(InputBox("Vardiya sayisi (2 veya 3):", "Plan Olustur", "2"))
+   If gNormalVardiya < 1 Or gNormalVardiya > 3 Then gNormalVardiya = 2
+ 
+   Application.ScreenUpdating = True
+ 
+   ' Tatiller
+   gTatilSayisi = 8
+   ReDim gTatilGunler(0 To gTatilSayisi - 1)
+   ReDim gTatilCalisiyorMu(0 To gTatilSayisi - 1)
+   Dim tatilTarihler(0 To 7) As Date
+   tatilTarihler(0) = DateSerial(2026, 1, 1)
+   tatilTarihler(1) = DateSerial(2026, 3, 20)
+   tatilTarihler(2) = DateSerial(2026, 4, 23)
+   tatilTarihler(3) = DateSerial(2026, 5, 1)
+   tatilTarihler(4) = DateSerial(2026, 5, 19)
+   tatilTarihler(5) = DateSerial(2026, 5, 26)
+   tatilTarihler(6) = DateSerial(2026, 7, 15)
+   tatilTarihler(7) = DateSerial(2026, 8, 30)
+ 
+   Dim tatilAdlari(0 To 7) As String
+   tatilAdlari(0) = "1 Ocak 2026 - Yilbasi"
+   tatilAdlari(1) = "Ramazan Bayrami 2026 (20-22 Mart)"
+   tatilAdlari(2) = "23 Nisan 2026 - Ulusal Egemenlik"
+   tatilAdlari(3) = "1 Mayis 2026 - Isci Bayrami"
+   tatilAdlari(4) = "19 Mayis 2026 - Genclik Bayrami"
+   tatilAdlari(5) = "Kurban Bayrami 2026 (26-30 Mayis)"
+   tatilAdlari(6) = "15 Temmuz 2026 - Demokrasi Gunu"
+   tatilAdlari(7) = "30 Agustos 2026 - Zafer Bayrami"
+ 
+   Dim tt As Integer
+   For tt = 0 To gTatilSayisi - 1
+       gTatilGunler(tt) = tatilTarihler(tt)
+       Dim cvp As VbMsgBoxResult
+       cvp = MsgBox(tatilAdlari(tt) & vbCrLf & vbCrLf & "Bu tatilde calisma yapilacak mi?", vbYesNo + vbQuestion, "Tatil Ayarlari")
+       gTatilCalisiyorMu(tt) = (cvp = vbYes)
+   Next tt
+ 
+   Application.ScreenUpdating = False
+ 
+   ' COJI1 baslangic
+   Dim c1Str As String
+   c1Str = InputBox("COJI 1 baslangic tarihi ve saati:" & vbCrLf & "(Ornek: 01.04.2026 07:00)", "Plan Olustur", "01.04.2026 07:00")
+   Dim c1Tarih As Date: c1Tarih = CDate(Split(c1Str, " ")(0))
+   Dim c1SaatPrc() As String: c1SaatPrc = Split(Split(c1Str, " ")(1), ":")
+   c1BasSaat = CDbl(c1SaatPrc(0)) + CDbl(c1SaatPrc(1)) / 60#
+ 
+   ' COJI2 baslangic
+   Dim c2Str As String
+   c2Str = InputBox("COJI 2 baslangic tarihi ve saati:" & vbCrLf & "(Ornek: 01.04.2026 07:00)", "Plan Olustur", "01.04.2026 07:00")
+   Dim c2Tarih As Date: c2Tarih = CDate(Split(c2Str, " ")(0))
+   Dim c2SaatPrc() As String: c2SaatPrc = Split(Split(c2Str, " ")(1), ":")
+   c2BasSaat = CDbl(c2SaatPrc(0)) + CDbl(c2SaatPrc(1)) / 60#
+ 
+   ' En erken tarih = plan baslangici
+   If c1Tarih <= c2Tarih Then basTarih = c1Tarih Else basTarih = c2Tarih
+   c1BasGun = CLng(c1Tarih - basTarih)
+   c2BasGun = CLng(c2Tarih - basTarih)
+ 
+   Dim ayCount As Integer
+   ayCount = CInt(InputBox("Kac ay planlanacak:", "Plan Olustur", "3"))
+   gunSayisi = ayCount * 31
+End Sub
+ 
+' ====================================================
+' GORSEL OLUSTUR
+' ====================================================
+Sub GorselOlustur(plan() As Variant, ucakSayisi As Long, ilkUcak As Long, _
+                 basTarih As Date, gunSayisi As Long)
+ 
+   ' Operasyon kodlari (ist_idx, op_idx)
+   Dim op_kodlar(0 To 7, 0 To 5) As String
+   op_kodlar(0, 0) = "TOPSKIN-0100": op_kodlar(0, 1) = "TOPSKIN-0150": op_kodlar(0, 2) = "TOPSKIN-0200"
+   op_kodlar(0, 3) = "TOPSKIN-0250": op_kodlar(0, 4) = "TOPSKIN-0300": op_kodlar(0, 5) = "TOPSKIN-0350"
+   op_kodlar(1, 0) = "CANOPY-0070": op_kodlar(1, 1) = "CANOPY-0075"
+   op_kodlar(2, 0) = "CANOPY-0080": op_kodlar(2, 1) = "CANOPY-0084": op_kodlar(2, 2) = "CANOPY-0086"
+   op_kodlar(3, 0) = "CANOPY-0078": op_kodlar(3, 1) = "CANOPY-0087": op_kodlar(3, 2) = "CANOPY-0090"
+   op_kodlar(3, 3) = "CANOPY-0140": op_kodlar(3, 4) = "CANOPY-0091"
+   op_kodlar(4, 0) = "CANOPY-0097": op_kodlar(4, 1) = "CANOPY-0092": op_kodlar(4, 2) = "CANOPY-0111"
+   op_kodlar(4, 3) = "CANOPY-0150": op_kodlar(4, 4) = "CANOPY-1041": op_kodlar(4, 5) = "CANOPY-1072"
+   op_kodlar(5, 0) = "CANOPY-0120": op_kodlar(5, 1) = "CANOPY-0125"
+   op_kodlar(6, 0) = "CANOPY-0130"
+   op_kodlar(7, 0) = "FINAL"
+ 
+   ' Renk paleti
+   Dim renkler(0 To 19) As String
+   renkler(0) = "FFD700": renkler(1) = "87CEEB": renkler(2) = "90EE90"
+   renkler(3) = "FFB6C1": renkler(4) = "DDA0DD": renkler(5) = "F0E68C"
+   renkler(6) = "98FB98": renkler(7) = "87CEFA": renkler(8) = "FFA07A"
+   renkler(9) = "20B2AA": renkler(10) = "FF6347": renkler(11) = "4169E1"
+   renkler(12) = "32CD32": renkler(13) = "FF69B4": renkler(14) = "9370DB"
+   renkler(15) = "00CED1": renkler(16) = "FF8C00": renkler(17) = "8B4513"
+   renkler(18) = "2E8B57": renkler(19) = "DC143C"
+ 
+   ' Sayfayi olustur
+   Dim ws As Worksheet
+   Application.DisplayAlerts = False
+   On Error Resume Next: ThisWorkbook.Sheets("GanttPlan").Delete: On Error GoTo 0
+   Application.DisplayAlerts = True
+   Dim yeniWs As Worksheet
+   Set yeniWs = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+   yeniWs.Name = "GanttPlan"
+   Set ws = yeniWs
+   ws.Cells.Font.Name = "Calibri"
+ 
+   Const IST_COL As Integer = 1
+   Const OP_COL As Integer = 2
+   Const VERI_COL As Integer = 3
+   Const BASLIK_SATIR As Integer = 3
+ 
+   ' 30 dakikalik dilimler (Double olarak: 7.0=07:00, 7.5=07:30, ...)
+   Dim saat_sayisi As Integer
+   If gNormalVardiya = 1 Then saat_sayisi = 16
+   If gNormalVardiya = 2 Then saat_sayisi = 32
+   If gNormalVardiya = 3 Then saat_sayisi = 48
+   Dim saatlerD() As Double
+   ReDim saatlerD(0 To saat_sayisi - 1)
+   Dim ss As Integer
+   If gNormalVardiya <= 2 Then
+       For ss = 0 To saat_sayisi - 1
+           saatlerD(ss) = 7# + ss * 0.5
+       Next ss
+   Else
+       For ss = 0 To 31: saatlerD(ss) = 7# + ss * 0.5: Next ss
+       For ss = 0 To 15: saatlerD(32 + ss) = 23# + ss * 0.5: Next ss
+   End If
+ 
+   Dim gunAdlari(0 To 6) As String
+   gunAdlari(0) = "Pzt": gunAdlari(1) = "Sal": gunAdlari(2) = "Car"
+   gunAdlari(3) = "Per": gunAdlari(4) = "Cum": gunAdlari(5) = "Cmt": gunAdlari(6) = "Paz"
+ 
+   ' Baslik satirlari
+   Dim gun_idx As Long
+   For gun_idx = 0 To gunSayisi - 1
+       Dim dd As Date: dd = basTarih + gun_idx
+       Dim gun_adi As String: gun_adi = gunAdlari(Weekday(dd, vbMonday) - 1)
+       Dim is_tatil As Boolean: is_tatil = TatilMiGun(gun_idx, basTarih)
+       Dim bas_col As Long: bas_col = VERI_COL + gun_idx * saat_sayisi
+       Dim bit_col As Long: bit_col = bas_col + saat_sayisi - 1
+ 
+       ' Gun baslik
+       ws.Range(ws.Cells(1, bas_col), ws.Cells(1, bit_col)).Merge
+       With ws.Cells(1, bas_col)
+           .Value = gun_adi & " " & Format(dd, "DD.MM.YYYY")
+           .Font.Bold = True: .Font.Size = 8: .Font.Color = RGB(255, 255, 255)
+           If is_tatil Then
+               .Interior.Color = RGB(192, 0, 0)
+           Else
+               .Interior.Color = RGB(31, 78, 121)
+           End If
+           .HorizontalAlignment = xlCenter: .VerticalAlignment = xlCenter
+       End With
+ 
+       ' Vardiya baslikları
+       Dim v As Integer
+       For v = 1 To gNormalVardiya
+           Dim vBas As Double: vBas = VardiyaBas(v)
+           Dim vBit As Double: vBit = VardiyaBit(v)
+           Dim vBitG As Double: If vBit >= 24 Then vBitG = vBit - 24 Else vBitG = vBit
+           Dim v_bas_col As Long: v_bas_col = -1
+           Dim v_bit_col As Long: v_bit_col = -1
+           Dim si As Integer
+           For si = 0 To saat_sayisi - 1
+               Dim sd As Double: sd = saatlerD(si)
+               If sd >= 24 Then sd = sd - 24
+               Dim origSd As Double: origSd = saatlerD(si)
+               If origSd >= vBas And origSd < vBit Then
+                   If v_bas_col = -1 Then v_bas_col = bas_col + si
+                   v_bit_col = bas_col + si
+               End If
+           Next si
+           If v_bas_col > 0 Then
+               ws.Range(ws.Cells(2, v_bas_col), ws.Cells(2, v_bit_col)).Merge
+               With ws.Cells(2, v_bas_col)
+                   Dim vrenk As String
+                   Select Case v
+                       Case 1: vrenk = "2E75B6"
+                       Case 2: vrenk = "375623"
+                       Case 3: vrenk = "7030A0"
+                   End Select
+                   Dim vb_s As Integer: vb_s = CInt(vBas): Dim vb_dk As Integer: vb_dk = CInt((vBas - Int(vBas)) * 60)
+                   Dim vbt_s As Integer: vbt_s = CInt(vBitG): Dim vbt_dk As Integer: vbt_dk = CInt((vBitG - Int(vBitG)) * 60)
+                   .Value = "S" & v & " (" & Format(vb_s, "00") & ":" & Format(vb_dk, "00") & "-" & Format(vbt_s, "00") & ":" & Format(vbt_dk, "00") & ")"
+                   .Font.Bold = True: .Font.Size = 7: .Font.Color = RGB(255, 255, 255)
+                   .Interior.Color = RGB(CLng("&H" & Left(vrenk, 2)), CLng("&H" & Mid(vrenk, 3, 2)), CLng("&H" & Right(vrenk, 2)))
+                   .HorizontalAlignment = xlCenter: .VerticalAlignment = xlCenter
+               End With
+           End If
+       Next v
+ 
+       ' 30dk basliklar ve mola isareti
+       For si = 0 To saat_sayisi - 1
+           Dim scol As Long: scol = bas_col + si
+           Dim sdVal As Double: sdVal = saatlerD(si)
+ 
+           ' Mola mu?
+           Dim is_mola As Boolean: is_mola = False
+           Dim mv As Integer
+           For mv = 1 To gNormalVardiya
+               Dim mb As Double: mb = VardiyaMolaBas(mv)
+               Dim mbt As Double: mbt = VardiyaMolaBit(mv)
+               If mv = 3 Then mb = mb - 24#: mbt = mbt - 24#
+               If sdVal >= mb And sdVal < mbt Then is_mola = True: Exit For
+           Next mv
+ 
+           Dim sdGoster As Double: sdGoster = sdVal
+           If sdGoster >= 24 Then sdGoster = sdGoster - 24
+           Dim s_h As Integer: s_h = CInt(Int(sdGoster))
+           Dim s_m As Integer: s_m = CInt((sdGoster - Int(sdGoster)) * 60)
+ 
+           With ws.Cells(3, scol)
+               .Value = Format(s_h, "00") & ":" & Format(s_m, "00")
+               .Font.Size = 6: .Font.Bold = True
+               If is_mola Then
+                   .Interior.Color = RGB(255, 200, 0)
+                   .Font.Color = RGB(100, 60, 0)
+               ElseIf is_tatil Then
+                   .Interior.Color = RGB(255, 200, 200)
+                   .Font.Color = RGB(0, 0, 0)
+               Else
+                   .Interior.Color = RGB(214, 228, 240)
+                   .Font.Color = RGB(0, 0, 0)
+               End If
+               .HorizontalAlignment = xlCenter
+               .Borders.LineStyle = xlContinuous
+               .Borders.Weight = xlHairline
+               .Borders.Color = RGB(180, 180, 180)
+           End With
+           ws.Columns(scol).ColumnWidth = 3.2
+       Next si
+   Next gun_idx
+ 
+   ' Sol sutunlar
+   ws.Columns(IST_COL).ColumnWidth = 22
+   ws.Columns(OP_COL).ColumnWidth = 40
+   Dim r As Integer, c As Integer
+   For r = 1 To 3
+       For c = 1 To 2
+           With ws.Cells(r, c)
+               .Font.Bold = True: .Font.Size = 9: .Font.Color = RGB(255, 255, 255)
+               .Interior.Color = RGB(31, 78, 121)
+               .HorizontalAlignment = xlCenter: .VerticalAlignment = xlCenter
+           End With
+       Next c
+   Next r
+   ws.Cells(1, IST_COL).Value = "ISTASYON / HAT"
+   ws.Cells(1, OP_COL).Value = "OPERASYON"
+   ws.Range(ws.Cells(1, IST_COL), ws.Cells(3, IST_COL)).Merge
+   ws.Range(ws.Cells(1, OP_COL), ws.Cells(3, OP_COL)).Merge
+ 
+   ' Istasyon ve operasyon satirlari
+   Dim mevcut_satir As Long: mevcut_satir = BASLIK_SATIR + 1
+ 
+   Dim ist_adlari(0 To 7) As String
+   ist_adlari(0) = "COJI 1": ist_adlari(1) = "COJI 2 WINDSHIELD"
+   ist_adlari(2) = "COJI 2 MATE": ist_adlari(3) = "OUT OF COJI"
+   ist_adlari(4) = "LAY OFF": ist_adlari(5) = "BOYA"
+   ist_adlari(6) = "SEALANT": ist_adlari(7) = "FINAL"
+ 
+   Dim ist_hatlar(0 To 7) As Integer
+   ist_hatlar(0) = 2: ist_hatlar(1) = 5: ist_hatlar(2) = 5
+   ist_hatlar(3) = 1: ist_hatlar(4) = 1: ist_hatlar(5) = 1
+   ist_hatlar(6) = 1: ist_hatlar(7) = 1
+ 
+   Dim op_adlar(0 To 7, 0 To 5) As String
+   op_adlar(0, 0) = "  CANOPY-TOPSKIN-0100 | LOCATION OF PARTS"
+   op_adlar(0, 1) = "  CANOPY-TOPSKIN-0150 | PRE-ARM INSTALL&ARM OPERATION"
+   op_adlar(0, 2) = "  CANOPY-TOPSKIN-0200 | ARM OPERATION"
+   op_adlar(0, 3) = "  CANOPY-TOPSKIN-0250 | FRAME INSTALLATION AFTER ARM"
+   op_adlar(0, 4) = "  CANOPY-TOPSKIN-0300 | OTHERS"
+   op_adlar(0, 5) = "  CANOPY-TOPSKIN-0350 | OUT OF COJI PROCESS"
+   op_adlar(1, 0) = "  CANOPY-0070 | COLD WORKING OF HOLES"
+   op_adlar(1, 1) = "  CANOPY-0075 | WINDSHIELD INSTALLATION"
+   op_adlar(2, 0) = "  CANOPY-0080 | INTEGRATION"
+   op_adlar(2, 1) = "  CANOPY-0084 | SILL EXT INTERCOSTAL AND STRAP INSTALLATION"
+   op_adlar(2, 2) = "  CANOPY-0086 | COJI 2 WINDSHIELD OPERATIONS"
+   op_adlar(3, 0) = "  CANOPY-0078 | OUT OF COJI-4 - OOC"
+   op_adlar(3, 1) = "  CANOPY-0087 | FR10 SECTOR CENTER EXT AND GUSSET INST - OOC"
+   op_adlar(3, 2) = "  CANOPY-0090 | WINDSHIELD OPERATIONS - OOC"
+   op_adlar(3, 3) = "  CANOPY-0140 | GTI MEASUREMENT - LAZER"
+   op_adlar(3, 4) = "  CANOPY-0091 | RETAINER INSTALLATION - OOC"
+   op_adlar(4, 0) = "  CANOPY-0097 | OVERHEAD AND HUD BRACKETS"
+   op_adlar(4, 1) = "  CANOPY-0092 | RETAINER NUT INSTALLATION"
+   op_adlar(4, 2) = "  CANOPY-0111 | OUT OF COJI-2"
+   op_adlar(4, 3) = "  CANOPY-0150 | ID PLATE&GROUND STUD OPS & ELECTRICAL BONDING"
+   op_adlar(4, 4) = "  CANOPY-1041 | OUT OF COJI"
+   op_adlar(4, 5) = "  CANOPY-1072 | OUT OF COJI-3"
+   op_adlar(5, 0) = "  CANOPY-0120 | TOUCH UP OPERATIONS"
+   op_adlar(5, 1) = "  CANOPY-0125 | TOUCH UP OPERATIONS"
+   op_adlar(6, 0) = "  CANOPY-0130 | SEALANT OPERATIONS"
+   op_adlar(7, 0) = "  FINAL | FINAL OPERATIONS"
+ 
+   Dim op_sayilari(0 To 7) As Integer
+   op_sayilari(0) = 6: op_sayilari(1) = 2: op_sayilari(2) = 3
+   op_sayilari(3) = 5: op_sayilari(4) = 6: op_sayilari(5) = 2
+   op_sayilari(6) = 1: op_sayilari(7) = 1
+ 
+   Dim satir_harita As Object: Set satir_harita = CreateObject("Scripting.Dictionary")
+ 
+   Dim ist_idx As Integer, hat_no As Integer, op_idx As Integer
+   For ist_idx = 0 To 7
+       For hat_no = 1 To ist_hatlar(ist_idx)
+           Dim hat_label As String
+           If ist_hatlar(ist_idx) > 1 Then
+               hat_label = ist_adlari(ist_idx) & " - Hat " & hat_no
+           Else
+               hat_label = ist_adlari(ist_idx)
+           End If
+ 
+           With ws.Cells(mevcut_satir, IST_COL)
+               .Value = hat_label: .Font.Bold = True: .Font.Size = 9
+               .Font.Color = RGB(255, 255, 255): .Interior.Color = RGB(46, 64, 87)
+               .VerticalAlignment = xlCenter: .WrapText = True
+           End With
+           With ws.Cells(mevcut_satir, OP_COL)
+               .Interior.Color = RGB(46, 64, 87)
+           End With
+           ' Baslik satirini tum sutunlara koyu renk ver
+           For gun_idx = 0 To gunSayisi - 1
+               Dim bc As Long: bc = VERI_COL + gun_idx * saat_sayisi
+               ws.Range(ws.Cells(mevcut_satir, bc), ws.Cells(mevcut_satir, bc + saat_sayisi - 1)).Interior.Color = RGB(46, 64, 87)
+           Next gun_idx
+           ws.Rows(mevcut_satir).RowHeight = 18
+           mevcut_satir = mevcut_satir + 1
+ 
+           For op_idx = 0 To op_sayilari(ist_idx) - 1
+               Dim key As String: key = CStr(ist_idx * 1000 + hat_no * 10 + op_idx)
+               satir_harita(key) = mevcut_satir
+               With ws.Cells(mevcut_satir, IST_COL)
+                   .Interior.Color = RGB(242, 242, 242)
+               End With
+               With ws.Cells(mevcut_satir, OP_COL)
+                   .Value = op_adlar(ist_idx, op_idx)
+                   .Font.Size = 7: .Interior.Color = RGB(242, 242, 242)
+                   .VerticalAlignment = xlCenter
+               End With
+               ws.Rows(mevcut_satir).RowHeight = 15
+               mevcut_satir = mevcut_satir + 1
+           Next op_idx
+       Next hat_no
+   Next ist_idx
+ 
+   ' Plani ciz
+   Dim ui As Long
+   For ui = 0 To ucakSayisi - 1
+       Dim ucak_no As Long: ucak_no = ilkUcak + ui
+       Dim renk As String: renk = renkler(ui Mod 20)
+       Dim r_val As Long: r_val = CLng("&H" & Left(renk, 2))
+       Dim g_val As Long: g_val = CLng("&H" & Mid(renk, 3, 2))
+       Dim b_val As Long: b_val = CLng("&H" & Right(renk, 2))
+ 
+       Dim kayit_idx As Long
+       For kayit_idx = 0 To 29
+           If plan(ui, kayit_idx, 0) = -1 Then Exit For
+ 
+           Dim p_ist As Integer: p_ist = CInt(plan(ui, kayit_idx, 0))
+           Dim p_hat As Integer: p_hat = CInt(plan(ui, kayit_idx, 1))
+           Dim p_op As Integer: p_op = CInt(plan(ui, kayit_idx, 2))
+           Dim p_bas_gun As Long: p_bas_gun = CLng(plan(ui, kayit_idx, 3))
+           Dim p_bas_saat As Double: p_bas_saat = CDbl(plan(ui, kayit_idx, 4))
+           Dim p_bit_gun As Long: p_bit_gun = CLng(plan(ui, kayit_idx, 5))
+           Dim p_bit_saat As Double: p_bit_saat = CDbl(plan(ui, kayit_idx, 6))
+ 
+           Dim s_key As String: s_key = CStr(p_ist * 1000 + p_hat * 10 + p_op)
+           If Not satir_harita.Exists(s_key) Then GoTo sonraki_kayit
+           Dim s_no As Long: s_no = CLng(satir_harita(s_key))
+ 
+           ' Baslangic ve bitis saatini 0.5 hassasiyetle bul
+           ' p_bas_saat ve p_bit_saat zaten saat cinsinden (orn: 7.5 = 07:30)
+           Dim cg As Long: cg = p_bas_gun
+           Dim cs As Double: cs = p_bas_saat  ' Tam hassasiyet
+           ' En yakin 0.5e yuvarla (asagi)
+           cs = Int(cs * 2) / 2
+           Dim ilk_hucre As Boolean: ilk_hucre = True
+ 
+           Do While (cg < p_bit_gun) Or (cg = p_bit_gun And cs < p_bit_saat)
+               If cg >= gunSayisi Then Exit Do
+ 
+               ' Bu 30dk dilimini saatlerD dizisinde bul
+               Dim found_si As Integer: found_si = -1
+               For si = 0 To saat_sayisi - 1
+                   If Abs(saatlerD(si) - cs) < 0.001 Then found_si = si: Exit For
+               Next si
+ 
+               ' Mola mu?
+               Dim is_mola_saat As Boolean: is_mola_saat = False
+               Dim mv2 As Integer
+               For mv2 = 1 To gNormalVardiya
+                   Dim mb2 As Double: mb2 = VardiyaMolaBas(mv2)
+                   Dim mbt2 As Double: mbt2 = VardiyaMolaBit(mv2)
+                   If mv2 = 3 Then mb2 = mb2 - 24#: mbt2 = mbt2 - 24#
+                   If cs >= mb2 And cs < mbt2 Then is_mola_saat = True: Exit For
+               Next mv2
+ 
+               If found_si >= 0 Then
+                   Dim s_col As Long: s_col = VERI_COL + cg * saat_sayisi + found_si
+ 
+                   ' Son hucre mi?
+                   Dim son_hucre As Boolean
+                   Dim sonraki_cs As Double: sonraki_cs = cs + 0.5
+                   Dim sonraki_cg As Long: sonraki_cg = cg
+                   If sonraki_cs >= 24 Then sonraki_cs = 7: sonraki_cg = cg + 1
+                   If gNormalVardiya < 3 And sonraki_cs >= 23 Then sonraki_cs = 7: sonraki_cg = cg + 1
+                   If gNormalVardiya < 2 And sonraki_cs >= 15 Then sonraki_cs = 7: sonraki_cg = cg + 1
+                   son_hucre = (sonraki_cg > p_bit_gun) Or (sonraki_cg = p_bit_gun And sonraki_cs >= p_bit_saat)
+ 
+                   ' Bas/bit saat string
+                   Dim basStr As String: basStr = SaatFormat(p_bas_saat)
+                   Dim bitStr As String: bitStr = SaatFormat(p_bit_saat)
+ 
+                   If is_mola_saat Then
+                       With ws.Cells(s_no, s_col)
+                           .Interior.Color = RGB(CLng(r_val + (255 - r_val) * 0.5), CLng(g_val + (255 - g_val) * 0.5), CLng(b_val + (255 - b_val) * 0.5))
+                           .Value = "M": .Font.Size = 6: .HorizontalAlignment = xlCenter
+                           .Borders.LineStyle = xlContinuous: .Borders.Weight = xlHairline
+                           .Borders.Color = RGB(150, 150, 150)
+                       End With
+                   Else
+                       With ws.Cells(s_no, s_col)
+                           .Interior.Color = RGB(r_val, g_val, b_val)
+                           .Borders.LineStyle = xlContinuous: .Borders.Weight = xlHairline
+                           .Borders.Color = RGB(150, 150, 150)
+                           If ilk_hucre And son_hucre Then
+                               .Value = ucak_no & " " & basStr & "-" & bitStr & " " & op_kodlar(p_ist, p_op)
+                               .Font.Size = 6: .Font.Bold = True: .HorizontalAlignment = xlLeft: .VerticalAlignment = xlCenter
+                               ilk_hucre = False
+                           ElseIf ilk_hucre Then
+                               .Value = ucak_no & " " & basStr & " " & op_kodlar(p_ist, p_op)
+                               .Font.Size = 6: .Font.Bold = True: .HorizontalAlignment = xlLeft: .VerticalAlignment = xlCenter
+                               ilk_hucre = False
+                           ElseIf son_hucre Then
+                               .Value = bitStr
+                               .Font.Size = 6: .Font.Bold = True: .HorizontalAlignment = xlRight: .VerticalAlignment = xlCenter
+                           End If
+                       End With
+                   End If
+               End If
+ 
+               ' Sonraki 30dk dilime gec
+               cs = cs + 0.5
+               If cs >= 24 Then cs = 7: cg = cg + 1
+               If gNormalVardiya < 3 And cs >= 23 Then cs = 7: cg = cg + 1
+               If gNormalVardiya < 2 And cs >= 15 Then cs = 7: cg = cg + 1
+           Loop
+sonraki_kayit:
+       Next kayit_idx
+   Next ui
+ 
+   ws.Activate: ws.Cells(1, VERI_COL).Select: ActiveWindow.FreezePanes = True: ws.Cells(1, 1).Select
+   ws.Rows(1).RowHeight = 20: ws.Rows(2).RowHeight = 16: ws.Rows(3).RowHeight = 14
+End Sub
+ 
+' ====================================================
+' MAKRO 1: PLAN OLUSTUR
+' ====================================================
+Sub PlanOlustur()
+   On Error GoTo Hata
+   Application.ScreenUpdating = False
+ 
+   Dim ilkUcak As Long, ucakSayisi As Long
+   Dim c1BasGun As Long, c2BasGun As Long
+   Dim c1BasSaat As Double, c2BasSaat As Double
+   Dim basTarih As Date, gunSayisi As Long
+ 
+   Call AyarlariOku(ilkUcak, ucakSayisi, c1BasGun, c1BasSaat, c2BasGun, c2BasSaat, basTarih, gunSayisi)
+ 
+   ' Op sureleri - her istasyon icin dizi
+   Dim c1Sureler(0 To 5) As Double
+   c1Sureler(0) = 10#: c1Sureler(1) = 22.5: c1Sureler(2) = 7.5
+   c1Sureler(3) = 22.5: c1Sureler(4) = 12.5: c1Sureler(5) = 12.5
+ 
+   Dim winSureler(0 To 1) As Double
+   winSureler(0) = 5#: winSureler(1) = 80#
+ 
+   Dim mateSureler(0 To 2) As Double
+   mateSureler(0) = 60#: mateSureler(1) = 35#: mateSureler(2) = 7.5
+ 
+   Dim oocSureler(0 To 4) As Double
+   oocSureler(0) = 15#: oocSureler(1) = 37.5: oocSureler(2) = 3#
+   oocSureler(3) = 15#: oocSureler(4) = 12.5
+ 
+   Dim laySureler(0 To 5) As Double
+   laySureler(0) = 10#: laySureler(1) = 3.5: laySureler(2) = 12.5
+   laySureler(3) = 5#: laySureler(4) = 12.5: laySureler(5) = 5#
+ 
+   Dim boyaSureler(0 To 1) As Double
+   boyaSureler(0) = 15#: boyaSureler(1) = 15#
+ 
+   ' Hat kuyruk pozisyonlari: (gun, saat)
+   Dim c1HatGun(1 To 2) As Long, c1HatSaat(1 To 2) As Double
+   Dim c2HatGun(1 To 5) As Long, c2HatSaat(1 To 5) As Double
+   Dim tekHatGun(3 To 7) As Long, tekHatSaat(3 To 7) As Double
+ 
+   Dim h As Integer
+   For h = 1 To 2: c1HatGun(h) = c1BasGun: c1HatSaat(h) = c1BasSaat: Next h
+   For h = 1 To 5: c2HatGun(h) = c2BasGun: c2HatSaat(h) = c2BasSaat: Next h
+ 
+   Dim enErkenGun As Long, enErkenSaat As Double
+   If c1BasGun < c2BasGun Or (c1BasGun = c2BasGun And c1BasSaat <= c2BasSaat) Then
+       enErkenGun = c1BasGun: enErkenSaat = c1BasSaat
+   Else
+       enErkenGun = c2BasGun: enErkenSaat = c2BasSaat
+   End If
+   For h = 3 To 7: tekHatGun(h) = enErkenGun: tekHatSaat(h) = enErkenSaat: Next h
+ 
+   ' Plan dizisi: (ucak_idx, kayit_idx, alan_idx)
+   ' alan: 0=ist_idx, 1=hat_no, 2=op_idx, 3=bas_gun, 4=bas_saat, 5=bit_gun, 6=bit_saat
+   Dim maks_kayit As Long: maks_kayit = 30  ' Ucak basina max kayit
+   Dim plan() As Variant
+   ReDim plan(0 To ucakSayisi - 1, 0 To maks_kayit - 1, 0 To 6)
+   ' Baslangicta -1 ile doldur (bos kayit isaretcisi)
+   Dim pi As Long, pj As Long, pk As Integer
+   For pi = 0 To ucakSayisi - 1
+       For pj = 0 To maks_kayit - 1
+           plan(pi, pj, 0) = -1
+       Next pj
+   Next pi
+ 
+   Dim ui As Long
+   For ui = 0 To ucakSayisi - 1
+       Dim kayit_idx As Long: kayit_idx = 0
+ 
+       ' === COJI1 ===
+       ' En erken bos hat
+       Dim c1H As Integer: c1H = 1
+       Dim c1EnDusukGun As Long: c1EnDusukGun = c1HatGun(1)
+       Dim c1EnDusukSaat As Double: c1EnDusukSaat = c1HatSaat(1)
+       For h = 2 To 2
+           If c1HatGun(h) < c1EnDusukGun Or (c1HatGun(h) = c1EnDusukGun And c1HatSaat(h) < c1EnDusukSaat) Then
+               c1EnDusukGun = c1HatGun(h): c1EnDusukSaat = c1HatSaat(h): c1H = h
+           End If
+       Next h
+       Dim c1BasG As Long: c1BasG = c1EnDusukGun
+       Dim c1BasS As Double: c1BasS = c1EnDusukSaat
+       Call IlkUygunZaman(c1BasG, c1BasS, basTarih)
+ 
+       Dim c1SonG As Long: c1SonG = c1BasG
+       Dim c1SonS As Double: c1SonS = c1BasS
+       Dim op As Integer
+       For op = 0 To 5
+           Dim og As Long: og = c1SonG: Dim os As Double: os = c1SonS
+           Call IlkUygunZaman(og, os, basTarih)
+           Dim bg As Long: bg = og: Dim bs As Double: bs = os
+           Call SaatEkle(og, os, c1Sureler(op), basTarih)
+           plan(ui, kayit_idx, 0) = 0: plan(ui, kayit_idx, 1) = c1H
+           plan(ui, kayit_idx, 2) = op: plan(ui, kayit_idx, 3) = bg
+           plan(ui, kayit_idx, 4) = bs: plan(ui, kayit_idx, 5) = og
+           plan(ui, kayit_idx, 6) = os
+           kayit_idx = kayit_idx + 1
+           c1SonG = og: c1SonS = os
+       Next op
+       c1HatGun(c1H) = c1SonG: c1HatSaat(c1H) = c1SonS
+       Dim c1BitG As Long: c1BitG = c1SonG
+       Dim c1BitS As Double: c1BitS = c1SonS
+ 
+       ' === WINDSHIELD ===
+       Dim c2H_win As Integer: c2H_win = 1
+       Dim c2EnDG As Long: c2EnDG = c2HatGun(1): Dim c2EnDS As Double: c2EnDS = c2HatSaat(1)
+       For h = 2 To 5
+           If c2HatGun(h) < c2EnDG Or (c2HatGun(h) = c2EnDG And c2HatSaat(h) < c2EnDS) Then
+               c2EnDG = c2HatGun(h): c2EnDS = c2HatSaat(h): c2H_win = h
+           End If
+       Next h
+       Dim winBasG As Long: Dim winBasS As Double
+       If c2EnDG > c1BasG Or (c2EnDG = c1BasG And c2EnDS > c1BasS) Then
+           winBasG = c2EnDG: winBasS = c2EnDS
+       Else
+           winBasG = c1BasG: winBasS = c1BasS
+       End If
+       Call IlkUygunZaman(winBasG, winBasS, basTarih)
+       Dim winSonG As Long: winSonG = winBasG: Dim winSonS As Double: winSonS = winBasS
+       For op = 0 To 1
+           og = winSonG: os = winSonS
+           Call IlkUygunZaman(og, os, basTarih)
+           bg = og: bs = os
+           Call SaatEkle(og, os, winSureler(op), basTarih)
+           plan(ui, kayit_idx, 0) = 1: plan(ui, kayit_idx, 1) = c2H_win
+           plan(ui, kayit_idx, 2) = op: plan(ui, kayit_idx, 3) = bg
+           plan(ui, kayit_idx, 4) = bs: plan(ui, kayit_idx, 5) = og
+           plan(ui, kayit_idx, 6) = os
+           kayit_idx = kayit_idx + 1
+           winSonG = og: winSonS = os
+       Next op
+       c2HatGun(c2H_win) = winSonG: c2HatSaat(c2H_win) = winSonS
+       Dim winBitG As Long: winBitG = winSonG: Dim winBitS As Double: winBitS = winSonS
+ 
+       ' === MATE ===
+       Dim c2H_mate As Integer: c2H_mate = 1
+       c2EnDG = c2HatGun(1): c2EnDS = c2HatSaat(1)
+       For h = 2 To 5
+           If c2HatGun(h) < c2EnDG Or (c2HatGun(h) = c2EnDG And c2HatSaat(h) < c2EnDS) Then
+               c2EnDG = c2HatGun(h): c2EnDS = c2HatSaat(h): c2H_mate = h
+           End If
+       Next h
+       ' MAX(c1bit, winbit)
+       Dim mateReqG As Long: Dim mateReqS As Double
+       If c1BitG > winBitG Or (c1BitG = winBitG And c1BitS >= winBitS) Then
+           mateReqG = c1BitG: mateReqS = c1BitS
+       Else
+           mateReqG = winBitG: mateReqS = winBitS
+       End If
+       Dim mateBasG As Long: Dim mateBasS As Double
+       If c2EnDG > mateReqG Or (c2EnDG = mateReqG And c2EnDS > mateReqS) Then
+           mateBasG = c2EnDG: mateBasS = c2EnDS
+       Else
+           mateBasG = mateReqG: mateBasS = mateReqS
+       End If
+       Call IlkUygunZaman(mateBasG, mateBasS, basTarih)
+       Dim mateSonG As Long: mateSonG = mateBasG: Dim mateSonS As Double: mateSonS = mateBasS
+       For op = 0 To 2
+           og = mateSonG: os = mateSonS
+           Call IlkUygunZaman(og, os, basTarih)
+           bg = og: bs = os
+           Call SaatEkle(og, os, mateSureler(op), basTarih)
+           plan(ui, kayit_idx, 0) = 2: plan(ui, kayit_idx, 1) = c2H_mate
+           plan(ui, kayit_idx, 2) = op: plan(ui, kayit_idx, 3) = bg
+           plan(ui, kayit_idx, 4) = bs: plan(ui, kayit_idx, 5) = og
+           plan(ui, kayit_idx, 6) = os
+           kayit_idx = kayit_idx + 1
+           mateSonG = og: mateSonS = os
+       Next op
+       c2HatGun(c2H_mate) = mateSonG: c2HatSaat(c2H_mate) = mateSonS
+ 
+       Dim oncekiG As Long: oncekiG = mateSonG
+       Dim oncekiS As Double: oncekiS = mateSonS
+ 
+       ' === TEK HATLI ISTASYONLAR ===
+       ' 3=OOC, 4=LAY OFF, 5=BOYA, 6=SEALANT, 7=FINAL
+       Dim ist_sur(3 To 7, 0 To 5) As Double
+       ist_sur(3, 0) = 15#: ist_sur(3, 1) = 37.5: ist_sur(3, 2) = 3#
+       ist_sur(3, 3) = 15#: ist_sur(3, 4) = 12.5
+       ist_sur(4, 0) = 10#: ist_sur(4, 1) = 3.5: ist_sur(4, 2) = 12.5
+       ist_sur(4, 3) = 5#: ist_sur(4, 4) = 12.5: ist_sur(4, 5) = 5#
+       ist_sur(5, 0) = 15#: ist_sur(5, 1) = 15#
+       ist_sur(6, 0) = 22.5
+       ist_sur(7, 0) = 30#
+ 
+       Dim ist_op_say(3 To 7) As Integer
+       ist_op_say(3) = 5: ist_op_say(4) = 6: ist_op_say(5) = 2
+       ist_op_say(6) = 1: ist_op_say(7) = 1
+ 
+       Dim ist_idx As Integer
+       For ist_idx = 3 To 7
+           Dim hatG As Long: hatG = tekHatGun(ist_idx)
+           Dim hatS As Double: hatS = tekHatSaat(ist_idx)
+           Dim istBasG As Long: Dim istBasS As Double
+           If hatG > oncekiG Or (hatG = oncekiG And hatS > oncekiS) Then
+               istBasG = hatG: istBasS = hatS
+           Else
+               istBasG = oncekiG: istBasS = oncekiS
+           End If
+           Call IlkUygunZaman(istBasG, istBasS, basTarih)
+           Dim istSonG As Long: istSonG = istBasG: Dim istSonS As Double: istSonS = istBasS
+           For op = 0 To ist_op_say(ist_idx) - 1
+               og = istSonG: os = istSonS
+               Call IlkUygunZaman(og, os, basTarih)
+               bg = og: bs = os
+               Call SaatEkle(og, os, ist_sur(ist_idx, op), basTarih)
+               plan(ui, kayit_idx, 0) = ist_idx: plan(ui, kayit_idx, 1) = 1
+               plan(ui, kayit_idx, 2) = op: plan(ui, kayit_idx, 3) = bg
+               plan(ui, kayit_idx, 4) = bs: plan(ui, kayit_idx, 5) = og
+               plan(ui, kayit_idx, 6) = os
+               kayit_idx = kayit_idx + 1
+               istSonG = og: istSonS = os
+           Next op
+           tekHatGun(ist_idx) = istSonG: tekHatSaat(ist_idx) = istSonS
+           oncekiG = istSonG: oncekiS = istSonS
+       Next ist_idx
+   Next ui
+ 
+   ' Plan verisini global degiskene kaydet (HaftalikPlan icin)
+   gPlanVerisi = plan
+   gPlanUcakSayisi = ucakSayisi
+   gPlanIlkUcak = ilkUcak
+   gPlanBasTarih = basTarih
+ 
+   ' Gorsel olustur
+   Call GorselOlustur(plan, ucakSayisi, ilkUcak, basTarih, gunSayisi)
+ 
+   Application.ScreenUpdating = True
+   MsgBox ucakSayisi & " uçak planlandı!", vbInformation, "Tamam"
+   Exit Sub
+Hata:
+   Application.ScreenUpdating = True
+   MsgBox "Hata: " & Err.Description, vbCritical
+End Sub
+ 
+' ====================================================
+' MAKRO 2: TATILLERI DUZENLE
+' ====================================================
+Sub TatilleriDuzenle()
+   Dim ws As Worksheet: Set ws = ThisWorkbook.Sheets("Ayarlar")
+   Dim tatilAdlari(0 To 7) As String
+   tatilAdlari(0) = "1 Ocak 2026 - Yilbasi"
+   tatilAdlari(1) = "Ramazan Bayrami 2026 (20-22 Mart)"
+   tatilAdlari(2) = "23 Nisan 2026 - Ulusal Egemenlik"
+   tatilAdlari(3) = "1 Mayis 2026 - Isci Bayrami"
+   tatilAdlari(4) = "19 Mayis 2026 - Genclik Bayrami"
+   tatilAdlari(5) = "Kurban Bayrami 2026 (26-30 Mayis)"
+   tatilAdlari(6) = "15 Temmuz 2026 - Demokrasi Gunu"
+   tatilAdlari(7) = "30 Agustos 2026 - Zafer Bayrami"
+ 
+   Dim tt As Integer
+   For tt = 0 To 7
+       Dim cvp As VbMsgBoxResult
+       cvp = MsgBox(tatilAdlari(tt) & vbCrLf & vbCrLf & "Bu tatilde calisma yapilacak mi?", vbYesNo + vbQuestion, "Tatil Ayarlari")
+       If cvp = vbYes Then
+           ws.Cells(13 + tt, 2).Value = "EVET"
+           ws.Cells(13 + tt, 2).Font.Color = RGB(0, 128, 0)
+       Else
+           ws.Cells(13 + tt, 2).Value = "HAYIR"
+           ws.Cells(13 + tt, 2).Font.Color = RGB(192, 0, 0)
+       End If
+   Next tt
+   MsgBox "Tatil ayarlari guncellendi! PlanOlustur'u calistirmayi unutmayin.", vbInformation
+End Sub
+ 
+' ====================================================
+' MAKRO 3: HAFTALIK PLAN
+' GanttPlan sayfasindan veri okuyarak haftalik ozet olusturur
+' ====================================================
+ 
+' Global plan verisi - PlanOlustur tarafindan doldurulur
+Sub HaftalikPlan()
+   On Error GoTo Hata
+ 
+   ' Plan verisi hazir mi?
+   If gPlanUcakSayisi = 0 Then
+       MsgBox "Once PlanOlustur makrosunu calistirin!", vbExclamation
+       Exit Sub
+   End If
+ 
+   ' Tarih araligini sor
+   Dim basStr As String
+   basStr = InputBox("Baslangic tarihi (GG.AA.YYYY):", "Haftalik Plan", Format(Date, "DD.MM.YYYY"))
+   If basStr = "" Then Exit Sub
+   Dim bitStr As String
+   bitStr = InputBox("Bitis tarihi (GG.AA.YYYY):", "Haftalik Plan", Format(Date + 6, "DD.MM.YYYY"))
+   If bitStr = "" Then Exit Sub
+ 
+   Dim basTarihH As Date: basTarihH = CDate(basStr)
+   Dim bitTarihH As Date: bitTarihH = CDate(bitStr)
+   Dim gunSayisiH As Long: gunSayisiH = CLng(bitTarihH - basTarihH) + 1
+ 
+   Application.ScreenUpdating = False
+ 
+   ' Sheet olustur
+   Dim wsH As Worksheet
+   Application.DisplayAlerts = False
+   On Error Resume Next: ThisWorkbook.Sheets("HaftalikPlan").Delete: On Error GoTo Hata
+   Application.DisplayAlerts = True
+   Set wsH = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+   wsH.Name = "HaftalikPlan": wsH.Cells.Font.Name = "Calibri"
+ 
+   ' Tanimlar
+   Dim ist_adlari(0 To 7) As String
+   ist_adlari(0) = "COJI 1": ist_adlari(1) = "COJI 2 WINDSHIELD"
+   ist_adlari(2) = "COJI 2 MATE": ist_adlari(3) = "OUT OF COJI"
+   ist_adlari(4) = "LAY OFF": ist_adlari(5) = "BOYA"
+   ist_adlari(6) = "SEALANT": ist_adlari(7) = "FINAL"
+ 
+   Dim ist_hatlar(0 To 7) As Integer
+   ist_hatlar(0) = 2: ist_hatlar(1) = 5: ist_hatlar(2) = 5
+   ist_hatlar(3) = 1: ist_hatlar(4) = 1: ist_hatlar(5) = 1
+   ist_hatlar(6) = 1: ist_hatlar(7) = 1
+ 
+   Dim op_kodlarH(0 To 7, 0 To 5) As String
+   op_kodlarH(0, 0) = "TOPSKIN-0100": op_kodlarH(0, 1) = "TOPSKIN-0150": op_kodlarH(0, 2) = "TOPSKIN-0200"
+   op_kodlarH(0, 3) = "TOPSKIN-0250": op_kodlarH(0, 4) = "TOPSKIN-0300": op_kodlarH(0, 5) = "TOPSKIN-0350"
+   op_kodlarH(1, 0) = "CANOPY-0070": op_kodlarH(1, 1) = "CANOPY-0075"
+   op_kodlarH(2, 0) = "CANOPY-0080": op_kodlarH(2, 1) = "CANOPY-0084": op_kodlarH(2, 2) = "CANOPY-0086"
+   op_kodlarH(3, 0) = "CANOPY-0078": op_kodlarH(3, 1) = "CANOPY-0087": op_kodlarH(3, 2) = "CANOPY-0090"
+   op_kodlarH(3, 3) = "CANOPY-0140": op_kodlarH(3, 4) = "CANOPY-0091"
+   op_kodlarH(4, 0) = "CANOPY-0097": op_kodlarH(4, 1) = "CANOPY-0092": op_kodlarH(4, 2) = "CANOPY-0111"
+   op_kodlarH(4, 3) = "CANOPY-0150": op_kodlarH(4, 4) = "CANOPY-1041": op_kodlarH(4, 5) = "CANOPY-1072"
+   op_kodlarH(5, 0) = "CANOPY-0120": op_kodlarH(5, 1) = "CANOPY-0125"
+   op_kodlarH(6, 0) = "CANOPY-0130"
+   op_kodlarH(7, 0) = "FINAL"
+ 
+   Dim op_sayilariH(0 To 7) As Integer
+   op_sayilariH(0) = 6: op_sayilariH(1) = 2: op_sayilariH(2) = 3
+   op_sayilariH(3) = 5: op_sayilariH(4) = 6: op_sayilariH(5) = 2
+   op_sayilariH(6) = 1: op_sayilariH(7) = 1
+ 
+   Dim renklerH(0 To 19) As String
+   renklerH(0) = "FFD700": renklerH(1) = "87CEEB": renklerH(2) = "90EE90"
+   renklerH(3) = "FFB6C1": renklerH(4) = "DDA0DD": renklerH(5) = "F0E68C"
+   renklerH(6) = "98FB98": renklerH(7) = "87CEFA": renklerH(8) = "FFA07A"
+   renklerH(9) = "20B2AA": renklerH(10) = "FF6347": renklerH(11) = "4169E1"
+   renklerH(12) = "32CD32": renklerH(13) = "FF69B4": renklerH(14) = "9370DB"
+   renklerH(15) = "00CED1": renklerH(16) = "FF8C00": renklerH(17) = "8B4513"
+   renklerH(18) = "2E8B57": renklerH(19) = "DC143C"
+ 
+   Dim gunAdlariH(0 To 6) As String
+   gunAdlariH(0) = "Pzt": gunAdlariH(1) = "Sal": gunAdlariH(2) = "Car"
+   gunAdlariH(3) = "Per": gunAdlariH(4) = "Cum": gunAdlariH(5) = "Cmt": gunAdlariH(6) = "Paz"
+ 
+   ' Baslik
+   wsH.Range("A1:Z1").Merge
+   With wsH.Cells(1, 1)
+       .Value = Format(basTarihH, "DD.MM.YYYY") & " - " & Format(bitTarihH, "DD.MM.YYYY") & " HAFTALIK PLAN"
+       .Font.Bold = True: .Font.Size = 13: .Font.Color = RGB(255, 255, 255)
+       .Interior.Color = RGB(31, 78, 121)
+       .HorizontalAlignment = xlCenter: .VerticalAlignment = xlCenter
+   End With
+   wsH.Rows(1).RowHeight = 28
+ 
+   ' Sutun yapisi: A=Istasyon, B+= Her gun x vardiya
+   Const IST_COL_H As Integer = 1
+   Const GUN_BAS_COL_H As Integer = 2
+   wsH.Columns(IST_COL_H).ColumnWidth = 24
+ 
+   ' Gun baslikları
+   Dim hcol As Long: hcol = GUN_BAS_COL_H
+   Dim gun_idx As Long
+   For gun_idx = 0 To gunSayisiH - 1
+       Dim dd As Date: dd = basTarihH + gun_idx
+       Dim gun_adi As String: gun_adi = gunAdlariH(Weekday(dd, vbMonday) - 1)
+       Dim is_tatil As Boolean: is_tatil = TatilMiGun(CLng(dd - gPlanBasTarih), gPlanBasTarih)
+       Dim v As Integer
+       For v = 1 To gNormalVardiya
+           Dim vBasH As Double: vBasH = VardiyaBas(v)
+           Dim vBitH As Double: vBitH = VardiyaBit(v)
+           Dim vBitGH As Double: If vBitH >= 24 Then vBitGH = vBitH - 24 Else vBitGH = vBitH
+           With wsH.Cells(2, hcol)
+               .Value = gun_adi & " " & Format(dd, "DD.MM") & Chr(10) & "S" & v & " " & Format(vBasH, "00") & ":00-" & Format(vBitGH, "00") & ":00"
+               .Font.Bold = True: .Font.Size = 8: .Font.Color = RGB(255, 255, 255)
+               If is_tatil Then
+                   .Interior.Color = RGB(192, 0, 0)
+               Else
+                   Select Case v
+                       Case 1: .Interior.Color = RGB(31, 78, 121)
+                       Case 2: .Interior.Color = RGB(55, 86, 35)
+                       Case 3: .Interior.Color = RGB(112, 48, 160)
+                   End Select
+               End If
+               .HorizontalAlignment = xlCenter: .VerticalAlignment = xlCenter: .WrapText = True
+           End With
+           wsH.Columns(hcol).ColumnWidth = 22
+           hcol = hcol + 1
+       Next v
+   Next gun_idx
+   wsH.Rows(2).RowHeight = 36
+ 
+   ' Istasyon satirlari
+   Dim mevcut_satir As Long: mevcut_satir = 3
+   Dim ist_idx As Integer, hat_no As Integer
+ 
+   For ist_idx = 0 To 7
+       For hat_no = 1 To ist_hatlar(ist_idx)
+           Dim hat_label As String
+           If ist_hatlar(ist_idx) > 1 Then
+               hat_label = ist_adlari(ist_idx) & " - Hat " & hat_no
+           Else
+               hat_label = ist_adlari(ist_idx)
+           End If
+ 
+           With wsH.Cells(mevcut_satir, IST_COL_H)
+               .Value = hat_label: .Font.Bold = True: .Font.Size = 9
+               .Font.Color = RGB(255, 255, 255): .Interior.Color = RGB(46, 64, 87)
+               .VerticalAlignment = xlCenter
+               .Borders.LineStyle = xlContinuous: .Borders.Weight = xlThin
+           End With
+ 
+           ' Her gun ve vardiya icin plan verisini tara
+           Dim col As Long: col = GUN_BAS_COL_H
+           For gun_idx = 0 To gunSayisiH - 1
+               dd = basTarihH + gun_idx
+               Dim gunIdxPlan As Long: gunIdxPlan = CLng(dd - gPlanBasTarih)
+               is_tatil = TatilMiGun(gunIdxPlan, gPlanBasTarih)
+ 
+               For v = 1 To gNormalVardiya
+                   vBasH = VardiyaBas(v)
+                   vBitH = VardiyaBit(v)
+ 
+                   Dim hucreMetin As String: hucreMetin = ""
+                   Dim hucreRenk As String: hucreRenk = ""
+ 
+                   If Not is_tatil Then
+                       ' Plan verisini tara - bu gun/vardiya/istasyon/hat ile esleseni bul
+                       Dim ui As Long
+                       For ui = 0 To gPlanUcakSayisi - 1
+                           Dim ucakNo As Long: ucakNo = gPlanIlkUcak + ui
+                           Dim ki As Long
+                           For ki = 0 To 29
+                               ' Kayit gecerli mi?
+                               If gPlanVerisi(ui, ki, 0) = -1 Then Exit For
+ 
+                               Dim p_ist As Integer: p_ist = CInt(gPlanVerisi(ui, ki, 0))
+                               Dim p_hat As Integer: p_hat = CInt(gPlanVerisi(ui, ki, 1))
+                               Dim p_op As Integer: p_op = CInt(gPlanVerisi(ui, ki, 2))
+                               Dim p_bas_gun As Long: p_bas_gun = CLng(gPlanVerisi(ui, ki, 3))
+                               Dim p_bas_saat As Double: p_bas_saat = CDbl(gPlanVerisi(ui, ki, 4))
+                               Dim p_bit_gun As Long: p_bit_gun = CLng(gPlanVerisi(ui, ki, 5))
+                               Dim p_bit_saat As Double: p_bit_saat = CDbl(gPlanVerisi(ui, ki, 6))
+ 
+                               ' Bu kayit bu istasyon/hat mi?
+                               If p_ist <> ist_idx Or p_hat <> hat_no Then GoTo sonraki_kayit_h
+ 
+                               ' Bu operasyon bu gun/vardiyadaki zaman araligiyla kesisiyor mu?
+                               ' Vardiyanin baslangic ve bitis DateTime'ini hesapla
+                               Dim vBasDtH As Double: vBasDtH = gunIdxPlan + vBasH / 24#
+                               Dim vBitDtH As Double: vBitDtH = gunIdxPlan + vBitH / 24#
+                               Dim opBasDtH As Double: opBasDtH = p_bas_gun + p_bas_saat / 24#
+                               Dim opBitDtH As Double: opBitDtH = p_bit_gun + p_bit_saat / 24#
+ 
+                               If opBasDtH < vBitDtH And opBitDtH > vBasDtH Then
+                                   ' Kesisim var!
+                                   ' Bu vardiyadaki baslangic ve bitis saatini hesapla
+                                   Dim gosBas As Double: If opBasDtH > vBasDtH Then gosBas = opBasDtH Else gosBas = vBasDtH
+                                   Dim gosBit As Double: If opBitDtH < vBitDtH Then gosBit = opBitDtH Else gosBit = vBitDtH
+ 
+                                   Dim gosBasSaat As Double: gosBasSaat = (gosBas - Int(gosBas)) * 24#
+                                   Dim gosBitSaat As Double: gosBitSaat = (gosBit - Int(gosBit)) * 24#
+                                   hucreMetin = ucakNo & " " & SaatFormat(gosBasSaat) & "-" & SaatFormat(gosBitSaat) & Chr(10) & op_kodlarH(p_ist, p_op)
+                                   hucreRenk = renklerH(ui Mod 20)
+                                   GoTo yazHucre
+                               End If
+sonraki_kayit_h:
+                           Next ki
+                       Next ui
+                   End If
+ 
+yazHucre:
+                   With wsH.Cells(mevcut_satir, col)
+                       If hucreMetin <> "" Then
+                           .Value = hucreMetin
+                           Dim rH As Long: rH = CLng("&H" & Left(hucreRenk, 2))
+                           Dim gH As Long: gH = CLng("&H" & Mid(hucreRenk, 3, 2))
+                           Dim bH As Long: bH = CLng("&H" & Right(hucreRenk, 2))
+                           .Interior.Color = RGB(rH, gH, bH)
+                           .Font.Bold = True: .Font.Size = 8
+                           .WrapText = True
+                       ElseIf is_tatil Then
+                           .Interior.Color = RGB(215, 215, 215)
+                       End If
+                       .HorizontalAlignment = xlCenter: .VerticalAlignment = xlCenter
+                       .Borders.LineStyle = xlContinuous
+                       .Borders.Weight = xlHairline
+                       .Borders.Color = RGB(180, 180, 180)
+                   End With
+                   col = col + 1
+               Next v
+           Next gun_idx
+ 
+           wsH.Rows(mevcut_satir).RowHeight = 36
+           mevcut_satir = mevcut_satir + 1
+       Next hat_no
+   Next ist_idx
+ 
+   wsH.Cells(1, 1).Select
+   Application.ScreenUpdating = True
+   MsgBox "Haftalik plan olusturuldu!", vbInformation
+   Exit Sub
+Hata:
+   Application.ScreenUpdating = True
+   MsgBox "Hata: " & Err.Description, vbCritical
+End Sub
+ 
+' ====================================================
+' MAKRO 4: SURE DEGISIMI
+' ====================================================
+Sub SureDegisimi()
+   On Error GoTo Hata
+ 
+   If gPlanUcakSayisi = 0 Then MsgBox "Once PlanOlustur calistirin!", vbExclamation: Exit Sub
+ 
+   ' Istasyon ve operasyon tanimlari
+   Dim ist_adlari(0 To 7) As String
+   ist_adlari(0) = "COJI 1": ist_adlari(1) = "COJI 2 WINDSHIELD"
+   ist_adlari(2) = "COJI 2 MATE": ist_adlari(3) = "OUT OF COJI"
+   ist_adlari(4) = "LAY OFF": ist_adlari(5) = "BOYA"
+   ist_adlari(6) = "SEALANT": ist_adlari(7) = "FINAL"
+ 
+   Dim op_kodlarS(0 To 7, 0 To 5) As String
+   op_kodlarS(0, 0) = "CANOPY-TOPSKIN-0100": op_kodlarS(0, 1) = "CANOPY-TOPSKIN-0150"
+   op_kodlarS(0, 2) = "CANOPY-TOPSKIN-0200": op_kodlarS(0, 3) = "CANOPY-TOPSKIN-0250"
+   op_kodlarS(0, 4) = "CANOPY-TOPSKIN-0300": op_kodlarS(0, 5) = "CANOPY-TOPSKIN-0350"
+   op_kodlarS(1, 0) = "CANOPY-0070": op_kodlarS(1, 1) = "CANOPY-0075"
+   op_kodlarS(2, 0) = "CANOPY-0080": op_kodlarS(2, 1) = "CANOPY-0084": op_kodlarS(2, 2) = "CANOPY-0086"
+   op_kodlarS(3, 0) = "CANOPY-0078": op_kodlarS(3, 1) = "CANOPY-0087": op_kodlarS(3, 2) = "CANOPY-0090"
+   op_kodlarS(3, 3) = "CANOPY-0140": op_kodlarS(3, 4) = "CANOPY-0091"
+   op_kodlarS(4, 0) = "CANOPY-0097": op_kodlarS(4, 1) = "CANOPY-0092": op_kodlarS(4, 2) = "CANOPY-0111"
+   op_kodlarS(4, 3) = "CANOPY-0150": op_kodlarS(4, 4) = "CANOPY-1041": op_kodlarS(4, 5) = "CANOPY-1072"
+   op_kodlarS(5, 0) = "CANOPY-0120": op_kodlarS(5, 1) = "CANOPY-0125"
+   op_kodlarS(6, 0) = "CANOPY-0130"
+   op_kodlarS(7, 0) = "FINAL"
+ 
+   Dim op_sayilariS(0 To 7) As Integer
+   op_sayilariS(0) = 6: op_sayilariS(1) = 2: op_sayilariS(2) = 3
+   op_sayilariS(3) = 5: op_sayilariS(4) = 6: op_sayilariS(5) = 2
+   op_sayilariS(6) = 1: op_sayilariS(7) = 1
+ 
+   ' Ucak sec
+   Dim hedefUcak As Long
+   hedefUcak = CLng(InputBox("Ucak numarasi:", "Sure Degisimi"))
+   Dim hedefIdx As Long: hedefIdx = hedefUcak - gPlanIlkUcak
+   If hedefIdx < 0 Or hedefIdx >= gPlanUcakSayisi Then
+       MsgBox "Ucak bulunamadi!", vbExclamation: Exit Sub
+   End If
+ 
+   ' Istasyon sec
+   Dim istMsg As String
+   Dim ist As Integer
+   For ist = 0 To 7
+       istMsg = istMsg & (ist + 1) & "=" & ist_adlari(ist) & vbCrLf
+   Next ist
+   Dim istNo As Integer
+   istNo = CInt(InputBox("Hangi istasyon?" & vbCrLf & istMsg, "Sure Degisimi", "1")) - 1
+   If istNo < 0 Or istNo > 7 Then MsgBox "Gecersiz istasyon!", vbExclamation: Exit Sub
+ 
+   ' Operasyon sec
+   Dim opMsg As String
+   Dim op As Integer
+   For op = 0 To op_sayilariS(istNo) - 1
+       Dim mevcutSure As Double
+       ' Plan verisinden mevcut sureyi bul
+       Dim ki As Long
+       For ki = 0 To 29
+           If gPlanVerisi(hedefIdx, ki, 0) = istNo And CInt(gPlanVerisi(hedefIdx, ki, 2)) = op Then
+               Dim basDbl As Double: basDbl = CDbl(gPlanVerisi(hedefIdx, ki, 3)) + CDbl(gPlanVerisi(hedefIdx, ki, 4)) / 24#
+               Dim bitDbl As Double: bitDbl = CDbl(gPlanVerisi(hedefIdx, ki, 5)) + CDbl(gPlanVerisi(hedefIdx, ki, 6)) / 24#
+               mevcutSure = (bitDbl - basDbl) * 24#
+               Exit For
+           End If
+       Next ki
+       opMsg = opMsg & (op + 1) & "=" & op_kodlarS(istNo, op) & " (" & Format(mevcutSure, "0.0") & " saat)" & vbCrLf
+   Next op
+ 
+   Dim opNo As Integer
+   opNo = CInt(InputBox("Hangi operasyon?" & vbCrLf & opMsg, "Sure Degisimi", "1")) - 1
+   If opNo < 0 Or opNo >= op_sayilariS(istNo) Then MsgBox "Gecersiz operasyon!", vbExclamation: Exit Sub
+ 
+   ' Yeni sure
+   Dim yeniSure As Double
+   yeniSure = CDbl(InputBox("Yeni sure (saat):", "Sure Degisimi", "10"))
+   If yeniSure <= 0 Then MsgBox "Gecersiz sure!", vbExclamation: Exit Sub
+ 
+   Application.ScreenUpdating = False
+ 
+   ' Plan verisini guncelle - bu operasyonun sure farkini hesapla
+   ' En temiz yaklasim: sureler dizisini guncelle ve yeniden hesapla
+   ' Sureler sabitlerde tanimli, biz plan verisini direct degistirip yeniden ciziyoruz
+   ' Onun icin sureleri global degisken yap
+   ' Su an icin: sadece bu operasyonun bitisini yeniden hesapla ve sonrakileri kaydır
+ 
+   Dim fark As Double
+   For ki = 0 To 29
+       If gPlanVerisi(hedefIdx, ki, 0) = -1 Then Exit For
+       If CInt(gPlanVerisi(hedefIdx, ki, 0)) = istNo And CInt(gPlanVerisi(hedefIdx, ki, 2)) = opNo Then
+           Dim eskiBas As Double: eskiBas = CDbl(gPlanVerisi(hedefIdx, ki, 3)) + CDbl(gPlanVerisi(hedefIdx, ki, 4)) / 24#
+           Dim eskiBit As Double: eskiBit = CDbl(gPlanVerisi(hedefIdx, ki, 5)) + CDbl(gPlanVerisi(hedefIdx, ki, 6)) / 24#
+           Dim eskiSure As Double: eskiSure = (eskiBit - eskiBas) * 24#
+           fark = yeniSure - eskiSure
+ 
+           ' Yeni bitis hesapla
+           Dim yeniBitGun As Long: yeniBitGun = CLng(gPlanVerisi(hedefIdx, ki, 3))
+           Dim yeniBitSaat As Double: yeniBitSaat = CDbl(gPlanVerisi(hedefIdx, ki, 4))
+           Call SaatEkle(yeniBitGun, yeniBitSaat, yeniSure, gPlanBasTarih)
+           gPlanVerisi(hedefIdx, ki, 5) = yeniBitGun
+           gPlanVerisi(hedefIdx, ki, 6) = yeniBitSaat
+           Exit For
+       End If
+   Next ki
+ 
+   ' Bu operasyondan sonraki tum operasyonlari fark kadar kaydır
+   If fark <> 0 Then
+       For ki = 0 To 29
+           If gPlanVerisi(hedefIdx, ki, 0) = -1 Then Exit For
+           Dim p_ist2 As Integer: p_ist2 = CInt(gPlanVerisi(hedefIdx, ki, 0))
+           Dim p_op2 As Integer: p_op2 = CInt(gPlanVerisi(hedefIdx, ki, 2))
+           ' Bu istasyon/op'tan sonra gelen operasyonlari kaydır
+           ' (Ayni istasyon, sonraki op veya sonraki istasyon)
+           Dim sonraGeliyor As Boolean: sonraGeliyor = False
+           If p_ist2 > istNo Then sonraGeliyor = True
+           If p_ist2 = istNo And p_op2 > opNo Then sonraGeliyor = True
+           If sonraGeliyor Then
+               Dim yBas As Long: yBas = CLng(gPlanVerisi(hedefIdx, ki, 3))
+               Dim yBasS As Double: yBasS = CDbl(gPlanVerisi(hedefIdx, ki, 4))
+               Dim yBit As Long: yBit = CLng(gPlanVerisi(hedefIdx, ki, 5))
+               Dim yBitS As Double: yBitS = CDbl(gPlanVerisi(hedefIdx, ki, 6))
+               ' Bas ve bit saatlerine fark ekle
+               Call SaatEkle(yBas, yBasS, fark, gPlanBasTarih)
+               Call SaatEkle(yBit, yBitS, fark, gPlanBasTarih)
+               gPlanVerisi(hedefIdx, ki, 3) = yBas
+               gPlanVerisi(hedefIdx, ki, 4) = yBasS
+               gPlanVerisi(hedefIdx, ki, 5) = yBit
+               gPlanVerisi(hedefIdx, ki, 6) = yBitS
+           End If
+       Next ki
+   End If
+ 
+   ' Gorsel yenile
+   Dim wsAy As Worksheet
+   On Error Resume Next: Set wsAy = ThisWorkbook.Sheets("Ayarlar"): On Error GoTo 0
+   Dim gunSayisi As Long: gunSayisi = gPlanUcakSayisi * 31  ' Yaklasik
+ 
+   Call GorselOlustur(gPlanVerisi, gPlanUcakSayisi, gPlanIlkUcak, gPlanBasTarih, gunSayisi)
+ 
+   Application.ScreenUpdating = True
+   MsgBox "Guncellendi! " & op_kodlarS(istNo, opNo) & " suresi: " & yeniSure & " saat", vbInformation
+   Exit Sub
+Hata:
+   Application.ScreenUpdating = True
+   MsgBox "Hata: " & Err.Description, vbCritical
+End Sub
+ 
+' ====================================================
+' MAKRO 5: DURUS EKLEME
+' ====================================================
+Sub DurusEkleme()
+   On Error GoTo Hata5
+ 
+   If gPlanUcakSayisi = 0 Then MsgBox "Once PlanOlustur calistirin!", vbExclamation: Exit Sub
+ 
+   ' Ucak sec
+   Dim hedefUcak As Long
+   hedefUcak = CLng(InputBox("Hangi ucaktan ONCE durus eklenecek?", "Durus Ekleme"))
+   Dim hedefIdx As Long: hedefIdx = hedefUcak - gPlanIlkUcak
+   If hedefIdx < 0 Or hedefIdx >= gPlanUcakSayisi Then
+       MsgBox "Ucak bulunamadi!", vbExclamation: Exit Sub
+   End If
+ 
+   ' Mevcut durusu goster
+   Dim mevcutDurus As Double: mevcutDurus = 0
+   Dim ki As Long
+   For ki = 0 To 29
+       If gPlanVerisi(hedefIdx, ki, 0) = -1 Then Exit For
+       If CInt(gPlanVerisi(hedefIdx, ki, 2)) = -1 Then  ' -1 = durus kaydi
+           mevcutDurus = mevcutDurus + CDbl(gPlanVerisi(hedefIdx, ki, 6)) - CDbl(gPlanVerisi(hedefIdx, ki, 4))
+       End If
+   Next ki
+ 
+   Dim degisim As Double
+   degisim = CDbl(InputBox("Kac SAAT durus? (+ ekle, - azalt)" & vbCrLf & "Mevcut durus: " & mevcutDurus & " saat", "Durus Ekleme", "7"))
+ 
+   If degisim = 0 Then Exit Sub
+   If degisim < 0 And mevcutDurus = 0 Then
+       MsgBox "Durus yok, eksi girilemez!", vbExclamation: Exit Sub
+   End If
+ 
+   Application.ScreenUpdating = False
+ 
+   ' Tum operasyonlari degisim kadar kaydır
+   For ki = 0 To 29
+       If gPlanVerisi(hedefIdx, ki, 0) = -1 Then Exit For
+       Dim yBas As Long: yBas = CLng(gPlanVerisi(hedefIdx, ki, 3))
+       Dim yBasS As Double: yBasS = CDbl(gPlanVerisi(hedefIdx, ki, 4))
+       Dim yBit As Long: yBit = CLng(gPlanVerisi(hedefIdx, ki, 5))
+       Dim yBitS As Double: yBitS = CDbl(gPlanVerisi(hedefIdx, ki, 6))
+       If degisim > 0 Then
+           Call SaatEkle(yBas, yBasS, degisim, gPlanBasTarih)
+           Call SaatEkle(yBit, yBitS, degisim, gPlanBasTarih)
+       Else
+           \' Azaltma icin negatif ekle (dikkatli)
+           Call SaatEkle(yBas, yBasS, degisim, gPlanBasTarih)
+           Call SaatEkle(yBit, yBitS, degisim, gPlanBasTarih)
+       End If
+       gPlanVerisi(hedefIdx, ki, 3) = yBas: gPlanVerisi(hedefIdx, ki, 4) = yBasS
+       gPlanVerisi(hedefIdx, ki, 5) = yBit: gPlanVerisi(hedefIdx, ki, 6) = yBitS
+   Next ki
+ 
+   Dim gunSayisi As Long: gunSayisi = gPlanUcakSayisi * 31
+   Call GorselOlustur(gPlanVerisi, gPlanUcakSayisi, gPlanIlkUcak, gPlanBasTarih, gunSayisi)
+ 
+   Application.ScreenUpdating = True
+   MsgBox "Guncellendi! Ucak " & hedefUcak & " tum operasyonlari " & degisim & " saat kaydı.", vbInformation
+   Exit Sub
+Hata5:
+   Application.ScreenUpdating = True
+   MsgBox "Hata: " & Err.Description, vbCritical
+End Sub
